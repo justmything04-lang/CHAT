@@ -1,38 +1,48 @@
-@bot.message_handler(func=lambda m: m.text == "📍 Mark Attendance")
-def mark_attendance_button(msg):
-    uid = msg.from_user.id
-    mode = get_user_mode(uid)
-    if mode is None:
-        safe_reply(msg, "⚠️ You are not registered.\nTap **📝 Register** first.", reply_markup=get_student_keyboard())
-        return
+@bot.message_handler(content_types=['location'])
+def handle_location(msg):
+    try:
+        reset_attendance_if_new_day()
+        uid = msg.from_user.id
 
-    allowed = within_allowed_time()
-    ok, txt = (allowed if isinstance(allowed, tuple) else (allowed, ""))
-    if not ok:
-        safe_reply(msg, txt or "⏰ Attendance not allowed right now.")
-        return
-
-    if mode == "online":
-        # Direct mark
-        reg_id = str(uid)
-        student = find_student_by_reg(online_master_sheet, reg_id) if online_master_sheet else None
-        student_name = (student or {}).get("Name", f"Student_{reg_id}")
-
-        today = get_today_date()
-        timestamp = datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M:%S")
-        egg_placeholder = "-"  # EasterEgg no longer used
-        row = [student_name, reg_id, today, egg_placeholder, timestamp, str(uid)]
-
-        if str(uid) in marked_today_online_ids:
-            safe_reply(msg, "⚠️ You’ve already marked attendance today (online).")
+        # Verify user is offline in MasterList
+        mode = get_user_mode(uid)
+        if mode != "offline":
+            safe_reply(msg, "⚠️ You are not registered as Offline.\nTap **📝 Register** and choose Offline.")
             return
 
-        with _queue_lock:
-            write_queue.append(("online", row))
-            marked_today_online_ids.add(str(uid))
-        invalidate_cache("online_attendance_rows")
-        safe_reply(msg, f"✅ Online attendance queued for {student_name} ({reg_id}) at {timestamp}")
+        allowed = within_allowed_time()
+        ok, txt = (allowed if isinstance(allowed, tuple) else (allowed, ""))
+        if not ok:
+            safe_reply(msg, txt or "⏰ Attendance not allowed right now.")
+            return
 
-    else:
-        # Offline: ask for location
-        safe_reply(msg, "📍 Send your current location to complete offline attendance.", reply_markup=get_location_keyboard())
+        reg_id = str(uid)  # Reg ID == Telegram ID
+        user_lat = msg.location.latitude
+        user_lon = msg.location.longitude
+        dist = distance_m(user_lat, user_lon, CLASS_LAT, CLASS_LON)
+        if dist > RADIUS_METERS:
+            safe_reply(msg, f"📍 Too far from class ({dist:.1f}m > {RADIUS_METERS}m).")
+            return
+
+        if str(uid) in marked_today_ids:
+            safe_reply(msg, "⚠️ You’ve already marked attendance today (offline).")
+            return
+
+        # Validate in offline MasterList
+        student = find_student_by_reg(master_sheet, reg_id)
+        if not student:
+            safe_reply(msg, "❌ You are not in the Offline Master List. Tap **📝 Register**.")
+            return
+
+        student_name = student.get("Name", f"Student_{reg_id}")
+        timestamp = datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M:%S")
+        egg_placeholder = "-"
+        row = [student_name, reg_id, get_today_date(), egg_placeholder, timestamp, str(uid)]
+        with _queue_lock:
+            write_queue.append(("offline", row))
+            marked_today_ids.add(str(uid))
+        invalidate_cache("attendance_rows")
+        safe_reply(msg, f"✅ Offline attendance queued for {student_name} ({reg_id}) at {timestamp}")
+    except Exception as e:
+        safe_reply(msg, f"⚠️ Error: {e}")
+        print("Location handler error:", e)
