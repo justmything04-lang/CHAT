@@ -1,108 +1,74 @@
-# stress_test_local.py — merged (offline + online, with mode selection for online)
+# ---------------- /top3 (offline + online, grouped style) ----------------
+@bot.message_handler(commands=['top3'])
+def send_top3(message):
+    if str(message.from_user.id) != str(TEACHER_ID):
+        safe_reply(message, "❌ Unauthorized.")
+        return
+    try:
+        absentee_file = client.open_by_key(ABSENTEE_SHEET_ID)
 
-import os
-import time
-import random
-import requests
-from dotenv import load_dotenv
+        def build_top3(tabs, students, total_classes, label):
+            if total_classes == 0:
+                return f"⚠️ No {label.lower()} attendance history yet."
 
-# Load from .env (so you don’t hardcode BOT_TOKEN)
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-PORT = int(os.getenv("PORT", 10000))
-URL = f"http://127.0.0.1:{PORT}/{BOT_TOKEN}"
+            # Build stats
+            stats = {str(s.get("Reg ID")): {"Name": s.get("Name"), "Absent": 0} for s in students}
+            for ws in tabs:
+                absentees = ws.get_all_records()
+                for a in absentees:
+                    rid = str(a.get("Reg ID", ""))
+                    if rid in stats:
+                        stats[rid]["Absent"] += 1
 
-TOTAL_OFFLINE = 2500
-TOTAL_ONLINE = 8000
-EASTER_EGG = "egg"
+            results = []
+            for reg_id, data in stats.items():
+                absent = data["Absent"]
+                present = total_classes - absent
+                percent = (present / total_classes) * 100 if total_classes else 0
+                results.append((data["Name"], reg_id, present, absent, percent))
 
-# ---------------- Simulations ----------------
+            results.sort(key=lambda x: (-x[4], -x[2]))
 
-def simulate_offline_student(session, reg_id):
-    """Send both egg text and location for offline student"""
-    chat_id = reg_id + 100000  # avoid overlap
+            # Group into Top1, Top2, Top3
+            msg = f"🏆 {label} Top Performers (out of {total_classes} classes):\n\n"
+            rank = 1
+            prev_percent = None
+            group = []
+            rank_emojis = {1: "🥇 Top 1", 2: "🥈 Top 2", 3: "🥉 Top 3"}
+            for name, reg, present, absent, percent in results:
+                if prev_percent is None or percent < prev_percent:
+                    if rank > 3:
+                        break
+                    if group:
+                        # Flush previous group
+                        msg += f"{rank_emojis[rank-1]} ({prev_percent:.1f}%):\n"
+                        for g in group:
+                            msg += f"• {g[0]} ({g[1]}) - ✅ {g[2]}, ❌ {g[3]}, 📊 {g[4]:.1f}%\n"
+                        msg += "\n"
+                        group = []
+                    prev_percent = percent
+                    rank += 1
+                group.append((name, reg, present, absent, percent))
 
-    # Step 1: EasterEgg + RegID
-    egg_update = {
-        "update_id": random.randint(100000, 999999),
-        "message": {
-            "message_id": random.randint(1000, 9999),
-            "from": {"id": chat_id, "is_bot": False, "first_name": f"Offline{reg_id}"},
-            "chat": {"id": chat_id, "type": "private"},
-            "date": int(time.time()),
-            "text": f"{EASTER_EGG} STU{reg_id:04d}"
-        }
-    }
-    session.post(URL, json=egg_update, timeout=5)
+            # Flush last group (Top3)
+            if group and rank-1 <= 3:
+                msg += f"{rank_emojis[rank-1]} ({prev_percent:.1f}%):\n"
+                for g in group:
+                    msg += f"• {g[0]} ({g[1]}) - ✅ {g[2]}, ❌ {g[3]}, 📊 {g[4]:.1f}%\n"
+                msg += "\n"
 
-    # Step 2: Location
-    loc_update = {
-        "update_id": random.randint(100000, 999999),
-        "message": {
-            "message_id": random.randint(1000, 9999),
-            "from": {"id": chat_id, "is_bot": False, "first_name": f"Offline{reg_id}"},
-            "chat": {"id": chat_id, "type": "private"},
-            "date": int(time.time()),
-            "location": {"latitude": 12.9551, "longitude": 80.1696}  # within radius
-        }
-    }
-    session.post(URL, json=loc_update, timeout=5)
+            return msg.strip()
 
+        # ----- OFFLINE -----
+        offline_tabs = [ws for ws in absentee_file.worksheets() if ws.title.endswith("-offline")]
+        offline_msg = build_top3(offline_tabs, get_cached_master_list(), len(offline_tabs), "Offline")
 
-def simulate_online_student(session, reg_id):
-    """Send Online mode + egg text for online student"""
-    chat_id = reg_id + 200000  # separate id space
+        # ----- ONLINE -----
+        online_tabs = [ws for ws in absentee_file.worksheets() if ws.title.endswith("-online")]
+        online_msg = build_top3(online_tabs, get_cached_online_master_list(), len(online_tabs), "Online")
 
-    # Step 0: Select Online mode
-    mode_update = {
-        "update_id": random.randint(100000, 999999),
-        "message": {
-            "message_id": random.randint(1000, 9999),
-            "from": {"id": chat_id, "is_bot": False, "first_name": f"Online{reg_id}"},
-            "chat": {"id": chat_id, "type": "private"},
-            "date": int(time.time()),
-            "text": "💻 Online"
-        }
-    }
-    session.post(URL, json=mode_update, timeout=5)
+        safe_reply(message, offline_msg + "\n\n" + online_msg)
 
-    # Step 1: EasterEgg + RegID
-    egg_update = {
-        "update_id": random.randint(100000, 999999),
-        "message": {
-            "message_id": random.randint(1000, 9999),
-            "from": {"id": chat_id, "is_bot": False, "first_name": f"Online{reg_id}"},
-            "chat": {"id": chat_id, "type": "private"},
-            "date": int(time.time()),
-            "text": f"{EASTER_EGG} STU{reg_id:04d}"
-        }
-    }
-    session.post(URL, json=egg_update, timeout=5)
-
-# ---------------- Run Stress ----------------
-
-def run_stress_test():
-    session = requests.Session()
-    start = time.time()
-
-    print(f"➡ Sending {TOTAL_OFFLINE} offline students...")
-    for i in range(1, TOTAL_OFFLINE + 1):
-        simulate_offline_student(session, i)
-        if i % 500 == 0 or i == TOTAL_OFFLINE:
-            print(f"🟢 Offline progress: {i}/{TOTAL_OFFLINE}")
-    print("✅ Offline simulation complete.\n")
-
-    print(f"➡ Sending {TOTAL_ONLINE} online students...")
-    for i in range(1, TOTAL_ONLINE + 1):
-        simulate_online_student(session, i)
-        if i % 1000 == 0 or i == TOTAL_ONLINE:
-            print(f"🟢 Online progress: {i}/{TOTAL_ONLINE}")
-    print("✅ Online simulation complete.\n")
-
-    elapsed = time.time() - start
-    print(f"🎉 Stress test complete in {elapsed:.1f} seconds.")
-
-# ---------------- Main ----------------
-if __name__ == "__main__":
-    print(f"🚀 Stress test starting for local bot at {URL}")
-    run_stress_test()
+    except Exception as e:
+        safe_reply(message, f"⚠️ Error generating Top 3: {e}")
+        print("Top3 error:", e)
