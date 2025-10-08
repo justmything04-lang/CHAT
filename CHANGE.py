@@ -1,8 +1,12 @@
+# Determine mode (previous selection or default offline)
+pending = user_pending.get(msg.from_user.id) or {}
+mode = pending.get("mode", "offline")
+
 if mode == "online":
     today = get_today_date()
     timestamp = datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M:%S")
 
-    # Match Reg ID against OnlineMasterList (which has numeric Reg IDs)
+    # Match Reg ID against OnlineMasterList (numeric Reg IDs)
     students = get_cached_online_master_list()
     student = next((s for s in students if str(s.get("Reg ID", "")).strip() == str(reg_id).strip()), None)
 
@@ -19,3 +23,8 @@ if mode == "online":
 
     invalidate_cache("online_attendance_rows")
     safe_reply(msg, f"✅ Online attendance queued for {student_name} ({reg_id}) at {timestamp}")
+
+else:
+    # For offline, store reg_id and wait for location
+    user_pending[msg.from_user.id] = {"mode": "offline", "reg_id": reg_id}
+    safe_reply(msg, "✅ Verified — now share 📍 location for offline attendance.")
