@@ -1,4 +1,4 @@
-# stress_test_local.py — for local webhook stress test
+# stress_test_local.py — fixed with full flow (offline + online)
 
 import os
 import time
@@ -6,66 +6,74 @@ import random
 import requests
 from dotenv import load_dotenv
 
-# Load from .env (so it's the SAME token your bot uses)
+# Load from .env
 load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # must match your attendance_bot_local.py
-PORT = int(os.getenv("PORT", 10000))  # same as your Flask port
-
-if not BOT_TOKEN:
-    raise SystemExit("❌ BOT_TOKEN missing in .env (must be set).")
-
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.getenv("PORT", 10000))
 URL = f"http://127.0.0.1:{PORT}/{BOT_TOKEN}"
-
-print(f"🚀 Stress test starting for local bot at {URL}")
 
 TOTAL_OFFLINE = 2500
 TOTAL_ONLINE = 8000
 
-def simulate_student(reg_id, mode="offline"):
-    """Send fake update to Flask webhook"""
-    if mode == "offline":
-        fake_update = {
-            "update_id": random.randint(100000, 999999),
-            "message": {
-                "message_id": random.randint(1000, 9999),
-                "from": {"id": reg_id, "is_bot": False, "first_name": f"Offline{reg_id}"},
-                "chat": {"id": reg_id, "type": "private"},
-                "date": int(time.time()),
-                "text": f"egg STU{reg_id:04d}"
-            }
+def simulate_offline_student(reg_id):
+    """Send both egg text and location for offline student"""
+    chat_id = reg_id + 100000  # avoid overlap
+    # Step 1: EasterEgg + RegID
+    egg_update = {
+        "update_id": random.randint(100000, 999999),
+        "message": {
+            "message_id": random.randint(1000, 9999),
+            "from": {"id": chat_id, "is_bot": False, "first_name": f"Offline{reg_id}"},
+            "chat": {"id": chat_id, "type": "private"},
+            "date": int(time.time()),
+            "text": f"egg STU{reg_id:04d}"
         }
-    else:  # online mode
-        fake_update = {
-            "update_id": random.randint(100000, 999999),
-            "message": {
-                "message_id": random.randint(1000, 9999),
-                "from": {"id": reg_id, "is_bot": False, "first_name": f"Online{reg_id}"},
-                "chat": {"id": reg_id, "type": "private"},
-                "date": int(time.time()),
-                "text": f"egg STU{reg_id:04d}"
-            }
-        }
+    }
+    requests.post(URL, json=egg_update, timeout=5)
 
-    try:
-        r = requests.post(URL, json=fake_update, timeout=5)
-        if r.status_code != 200:
-            print(f"⚠️ Failed update for {mode} {reg_id}: {r.text[:100]}")
-    except Exception as e:
-        print(f"⚠️ Request error for {mode} {reg_id}: {e}")
+    # Step 2: Location
+    loc_update = {
+        "update_id": random.randint(100000, 999999),
+        "message": {
+            "message_id": random.randint(1000, 9999),
+            "from": {"id": chat_id, "is_bot": False, "first_name": f"Offline{reg_id}"},
+            "chat": {"id": chat_id, "type": "private"},
+            "date": int(time.time()),
+            "location": {"latitude": 12.9551, "longitude": 80.1696}  # within radius
+        }
+    }
+    requests.post(URL, json=loc_update, timeout=5)
+
+def simulate_online_student(reg_id):
+    """Send only egg text for online student"""
+    chat_id = reg_id + 200000  # separate id space
+    egg_update = {
+        "update_id": random.randint(100000, 999999),
+        "message": {
+            "message_id": random.randint(1000, 9999),
+            "from": {"id": chat_id, "is_bot": False, "first_name": f"Online{reg_id}"},
+            "chat": {"id": chat_id, "type": "private"},
+            "date": int(time.time()),
+            "text": f"egg STU{reg_id:04d}"
+        }
+    }
+    requests.post(URL, json=egg_update, timeout=5)
 
 # ---------------- Run Stress ----------------
 start = time.time()
 
-# Offline batch
 print(f"➡ Sending {TOTAL_OFFLINE} offline students...")
 for i in range(1, TOTAL_OFFLINE + 1):
-    simulate_student(i, mode="offline")
+    simulate_offline_student(i)
+    if i % 500 == 0:
+        print(f"🟢 Offline progress: {i}/{TOTAL_OFFLINE}")
 print("✅ Offline simulation complete.")
 
-# Online batch
 print(f"➡ Sending {TOTAL_ONLINE} online students...")
 for i in range(1, TOTAL_ONLINE + 1):
-    simulate_student(i, mode="online")
+    simulate_online_student(i)
+    if i % 1000 == 0:
+        print(f"🟢 Online progress: {i}/{TOTAL_ONLINE}")
 print("✅ Online simulation complete.")
 
 elapsed = time.time() - start
