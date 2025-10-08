@@ -25,3 +25,15 @@ def start_cmd(msg):
             "Offline will ask for location; Online marks immediately.",
             reply_markup=kb
         )
+
+
+def get_student_keyboard(uid=None):
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+
+    # Check registration
+    mode = get_user_mode(uid) if uid else None
+    if mode is None:
+        # Not registered → show Register
+        kb.add(types.KeyboardButton("📝 Register"))
+    kb.add(types.KeyboardButton("📍 Mark Attendance"))
+    return kb
