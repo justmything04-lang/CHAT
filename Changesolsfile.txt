@@ -37,3 +37,34 @@ def get_student_keyboard(uid=None):
         kb.add(types.KeyboardButton("📝 Register"))
     kb.add(types.KeyboardButton("📍 Mark Attendance"))
     return kb
+
+
+
+@bot.message_handler(commands=['start'])
+def start_cmd(msg):
+    uid = str(msg.from_user.id)
+    if uid == str(TEACHER_ID):
+        kb = get_teacher_keyboard()
+        safe_reply(msg, "👋 Hello Sir! Your panel:", reply_markup=kb)
+    else:
+        kb = get_student_keyboard(uid)   # ✅ pass uid here
+        mode = get_user_mode(uid)
+        if mode is None:
+            # Not registered yet
+            safe_reply(
+                msg,
+                "👋 Welcome!\n\n"
+                "• Tap **📝 Register** once (bot will auto-save your Telegram ID as RegID and your Username).\n"
+                "• Choose **Offline** or **Online**.\n"
+                "• Then every day just tap **📍 Mark Attendance**.\n\n"
+                "Offline will ask for location; Online marks immediately.",
+                reply_markup=kb
+            )
+        else:
+            # Already registered → no Register button in keyboard
+            safe_reply(
+                msg,
+                f"👋 Welcome back! You are registered as **{mode.title()}**.\n"
+                "Just tap **📍 Mark Attendance** daily.",
+                reply_markup=kb
+            )
