@@ -1,61 +1,55 @@
-# stress_test.py — local simulator (offline 2500 + online 8000)
-
+# stress_test_local.py
 import os
-import asyncio
-import aiohttp
 import json
-from datetime import datetime
-from dotenv import load_dotenv
+import time
+import random
+import requests
 
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "TEST_TOKEN_123")
 PORT = int(os.getenv("PORT", 10000))
-EASTER_EGG = os.getenv("EASTER_EGG", "Zen")
-LAT = float(os.getenv("CLASS_LAT", 0))
-LON = float(os.getenv("CLASS_LON", 0))
+URL = f"http://127.0.0.1:{PORT}/{BOT_TOKEN}"
 
-BOT_URL = f"http://127.0.0.1:{PORT}/{BOT_TOKEN}"
-
-COUNT_OFFLINE = 2500
-COUNT_ONLINE = 8000
-CONCURRENCY = 100
-WAIT_BETWEEN = 0.2
-
-async def mark_offline(session, student_id):
-    reg_id = f"STU{student_id:04d}"
-    payload = {
-        "update_id": student_id,
-        "message": {"message_id": student_id,"from": {"id": student_id},"chat": {"id": student_id,"type": "private"},"text": f"{EASTER_EGG} {reg_id}"}
+def send_update(user_id, text, mode="offline"):
+    update = {
+        "update_id": random.randint(100000, 999999),
+        "message": {
+            "message_id": random.randint(1, 9999),
+            "from": {
+                "id": user_id,
+                "is_bot": False,
+                "first_name": "TestUser"
+            },
+            "chat": {
+                "id": user_id,
+                "type": "private"
+            },
+            "date": int(time.time()),
+            "text": text if mode == "offline" else f"{text} [ONLINE]"
+        }
     }
-    await session.post(BOT_URL, json=payload)
-    await asyncio.sleep(WAIT_BETWEEN)
-    loc_payload = {
-        "update_id": student_id+10000,
-        "message": {"message_id": student_id+10000,"from": {"id": student_id},"chat": {"id": student_id,"type": "private"},"location": {"latitude": LAT,"longitude": LON}}
-    }
-    await session.post(BOT_URL, json=loc_payload)
+    try:
+        r = requests.post(URL, data=json.dumps(update), headers={"Content-Type": "application/json"})
+        if r.status_code != 200:
+            print("⚠️ Failed update:", r.text)
+    except Exception as e:
+        print("Error sending:", e)
 
-async def mark_online(session, student_id):
-    reg_id = f"ON{student_id:05d}"
-    payload = {
-        "update_id": 50000+student_id,
-        "message": {"message_id": 50000+student_id,"from": {"id": 50000+student_id},"chat": {"id": 50000+student_id,"type": "private"},"text": f"{EASTER_EGG} {reg_id}"}
-    }
-    await session.post(BOT_URL, json=payload)
+print("🚀 Stress test started...")
 
-async def stress_test():
-    connector = aiohttp.TCPConnector(limit=CONCURRENCY)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = []
-        for i in range(1, COUNT_OFFLINE+1):
-            tasks.append(mark_offline(session, i))
-        for j in range(1, COUNT_ONLINE+1):
-            tasks.append(mark_online(session, j))
-        await asyncio.gather(*tasks)
+# Offline = 2500 students
+for i in range(1, 2501):
+    reg = f"STU{i:04d}"
+    send_update(10000+i, f"Egg {reg}", mode="offline")
+    if i % 500 == 0:
+        print(f"✅ Sent {i}/2500 offline students")
+    time.sleep(0.01)
 
-if __name__ == "__main__":
-    print(f"🚀 Stress test starting: {COUNT_OFFLINE} offline + {COUNT_ONLINE} online")
-    start = datetime.now()
-    asyncio.run(stress_test())
-    end = datetime.now()
-    print(f"✅ Stress test complete in {(end-start).total_seconds():.2f}s")
+# Online = 8000 students
+for i in range(1, 8001):
+    reg = f"ON{i:04d}"
+    send_update(20000+i, f"Egg {reg}", mode="online")
+    if i % 1000 == 0:
+        print(f"✅ Sent {i}/8000 online students")
+    time.sleep(0.005)
+
+print("🎉 Stress test finished. Check your Sheets now!")
