@@ -1,48 +1,33 @@
-@bot.message_handler(content_types=['location'])
-def handle_location(msg):
-    try:
-        reset_attendance_if_new_day()
-        uid = msg.from_user.id
+# Telegram
+BOT_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TEACHER_ID=1390359146
+ADMIN_ID=123456789
+BOT_USERNAME=YourBotUsername   # without @
 
-        # Verify user is offline in MasterList
-        mode = get_user_mode(uid)
-        if mode != "offline":
-            safe_reply(msg, "⚠️ You are not registered as Offline.\nTap **📝 Register** and choose Offline.")
-            return
+# Sheets
+SHEET_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ABSENTEE_SHEET_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxx     # offline absentee workbook
+ONLINE_ABSENTEE_SHEET_ID=xxxxxxxxxxxxxxxxxxxxxxxx  # online absentee workbook
 
-        allowed = within_allowed_time()
-        ok, txt = (allowed if isinstance(allowed, tuple) else (allowed, ""))
-        if not ok:
-            safe_reply(msg, txt or "⏰ Attendance not allowed right now.")
-            return
+TIMEZONE=Asia/Kolkata
+CLASS_LAT=12.9551501
+CLASS_LON=80.1696185
+RADIUS_METERS=250
 
-        reg_id = str(uid)  # Reg ID == Telegram ID
-        user_lat = msg.location.latitude
-        user_lon = msg.location.longitude
-        dist = distance_m(user_lat, user_lon, CLASS_LAT, CLASS_LON)
-        if dist > RADIUS_METERS:
-            safe_reply(msg, f"📍 Too far from class ({dist:.1f}m > {RADIUS_METERS}m).")
-            return
+# Google service JSON (escaped string)
+SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 
-        if str(uid) in marked_today_ids:
-            safe_reply(msg, "⚠️ You’ve already marked attendance today (offline).")
-            return
+# Render/Keep-Alive
+RENDER_EXTERNAL_URL=your-service.onrender.com
+WEBHOOK_URL=https://your-service.onrender.com/<BOT_TOKEN>
+KEEP_ALIVE_URL=https://your-service.onrender.com
 
-        # Validate in offline MasterList
-        student = find_student_by_reg(master_sheet, reg_id)
-        if not student:
-            safe_reply(msg, "❌ You are not in the Offline Master List. Tap **📝 Register**.")
-            return
+# WhatsApp Business Cloud API (only used once at registration)
+WHATSAPP_TOKEN=EAAG...your_meta_long_token...
+WHATSAPP_PHONE_ID=123456789012345
 
-        student_name = student.get("Name", f"Student_{reg_id}")
-        timestamp = datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d %H:%M:%S")
-        egg_placeholder = "-"
-        row = [student_name, reg_id, get_today_date(), egg_placeholder, timestamp, str(uid)]
-        with _queue_lock:
-            write_queue.append(("offline", row))
-            marked_today_ids.add(str(uid))
-        invalidate_cache("attendance_rows")
-        safe_reply(msg, f"✅ Offline attendance queued for {student_name} ({reg_id}) at {timestamp}")
-    except Exception as e:
-        safe_reply(msg, f"⚠️ Error: {e}")
-        print("Location handler error:", e)
+# Message templates (you can edit anytime, code auto-uses)
+PARENT_WELCOME_MSG="Hello 👋, you are now linked as a parent for updates about your child’s attendance. Please do not reply."
+PARENT_ABSENT_MSG="⚠️ Your child {student_name} ({reg_id}) was absent on {date} ({mode})."
+PARENT_INVITE_MSG="Hello 👋 from the academy. Please install Telegram and start our bot to receive updates: https://t.me/{bot_username}?start=parent_{reg_id}"
+FACULTY_REPORT_MSG="📊 Weekly Report:\nOffline parents linked: {off_linked}/{off_total}\nOnline parents linked: {on_linked}/{on_total}"
