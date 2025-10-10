@@ -1,0 +1,28 @@
+# ---------------- Google Sheets ----------------
+SERVICE_ACCOUNT_JSON={...}       # (entire JSON, minified)
+SHEET_ID=xxxxxxxxxxxxxxxxxxxx    # shared sheet for all tabs
+
+# ---------------- General ----------------
+TIMEZONE=Asia/Kolkata
+RENDER_EXTERNAL_URL=https://your-app.onrender.com
+
+# ---------------- Parents Bot ----------------
+PARENTS_BOT_TOKEN=123456:AA...   
+BOT_USERNAME_PARENTS=ParentsBotUsername
+
+# ---------------- Teachers/Admin Bot ----------------
+TEACHERS_BOT_TOKEN=654321:BB...   
+BOT_USERNAME_TEACHERS=TeachersBotUsername
+
+# ---------------- IDs ----------------
+ADMIN_ID=1234567890             # Headmaster / Owner Telegram ID
+HEADMASTER_ID=1234567891        # Optional, if different
+VP_ID=                          # (Optional if you want to hard-code roles)
+
+# ---------------- Optional Location (teacher check-in) ----------------
+TEACHER_LAT=12.9716
+TEACHER_LON=77.5946
+TEACHER_RADIUS_METERS=200
+
+# ---------------- Keep Alive ----------------
+KEEP_ALIVE_URL=https://your-app.onrender.com
