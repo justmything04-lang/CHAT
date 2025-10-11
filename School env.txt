@@ -26,3 +26,24 @@ TEACHER_RADIUS_METERS=200
 
 # ---------------- Keep Alive ----------------
 KEEP_ALIVE_URL=https://your-app.onrender.com
+
+
+
+
+
+# Telegram
+TEACHER_BOT_TOKEN=123456:ABC...       # this bot token
+TIMEZONE=Asia/Kolkata                 # your local timezone (change if needed)
+
+# Google Sheets
+SCHOOL_SHEET_ID=xxxxxxxxxxxxxxxxxxxx  # one shared workbook for both bots
+SERVICE_ACCOUNT_JSON={...}            # your service account JSON (minified one line)
+
+# Webhooks / Render
+RENDER_EXTERNAL_URL=your-teacher-service.onrender.com
+WEBHOOK_PATH=/tg                       # optional, defaults to /<token>
+KEEP_ALIVE_URL=https://your-teacher-service.onrender.com/
+
+# Parent bot bridge (HTTP)
+PARENT_NOTIFY_URL=https://parents-bot.onrender.com
+PARENT_NOTIFY_SECRET=some-long-shared-secret
