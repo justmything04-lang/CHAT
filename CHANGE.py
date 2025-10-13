@@ -71,6 +71,23 @@ def send_whatsapp_message(to_number, text):
 
 
 
+def finalize(uid,c):
+    e=CLASS_ATT[uid]; cls,sec=e["class"],e["sec"]; marks=e["marks"]; 
+    studs=students_ws.get_all_records(); studs=[s for s in studs if s["Class"]==cls and s["Section"]==sec]; d=today_str()
+    ws=ensure_att_tab(d,cls,sec)
+    absentees=[]
+    for s in studs:
+        rid=str(s["RollNo"]); name=s["Name"]; mark=marks.get(rid,"Present")
+        ws.append_row([rid,s.get("RegID",""),name,mark,uid,now_ts()])
+        attendance_ws.append_row([d,cls,sec,rid,name,mark,"",uid])
+        if mark=="Absent": absentees.append({"RegID":s.get("RegID",""),"StudentName":name,"ParentChatId":s.get("ParentChatId","")})
+    notify_parents(absentees,d,cls,sec,uid)
+    CLASS_ATT.pop(uid,None)
+    bot.answer_callback_query(c.id,"Submitted"); bot.send_message(c.message.chat.id,"✅ Attendance submitted")
+
+
+
+
 
 
 
