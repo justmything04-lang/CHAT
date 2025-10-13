@@ -1,0 +1,300 @@
+# parents_bot.py — Parents registration + leave + auto parent chat linking
+import os, json, time
+import gspread
+import telebot
+from telebot import types
+from google.oauth2.service_account import Credentials
+from dotenv import load_dotenv
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("PARENTS_BOT_TOKEN")
+SHEET_ID = os.getenv("SHEET_ID")
+TIMEZONE = os.getenv("TIMEZONE", "Asia/Kolkata")
+BOT_USERNAME_PARENTS = os.getenv("BOT_USERNAME_PARENTS", "")
+PARENT_NOTIFY_SECRET = os.getenv("PARENT_NOTIFY_SECRET", "")
+
+if not BOT_TOKEN or not SHEET_ID:
+    raise SystemExit("ENV missing: PARENTS_BOT_TOKEN or SHEET_ID")
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# Google Sheets client
+service_account_info = json.loads(os.getenv("SERVICE_ACCOUNT_JSON"))
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+credentials = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+client = gspread.authorize(credentials)
+book = client.open_by_key(SHEET_ID)
+
+def ws(title, headers=None):
+    try:
+        return book.worksheet(title)
+    except gspread.exceptions.WorksheetNotFound:
+        sh = book.add_worksheet(title=title, rows="2000", cols="20")
+        if headers:
+            sh.update("A1", [headers])
+        return sh
+
+students_ws = ws("Students", ["RollNo","Name","Class","Section","ParentPhone","ParentChatId","ParentLinked"])
+attendance_ws = ws("Attendance", ["Date","Class","Section","RollNo","Name","Status","Reason","MarkedBy"])
+leaves_ws = ws("Leaves", ["Date","RollNo","Name","Class","Section","Reason","Status"])
+notifs_ws = ws("Notifications", ["Date","SenderRole","TargetGroup","TargetDetail","Message"])
+settings_ws = ws("Settings", ["StartTime","EndTime","TeacherCutoff","SchoolName"])
+
+def today():
+    return datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y-%m-%d")
+
+# State memory
+REG_STATE = {}  # chat_id -> {"step": "class/section/phone/name", "data": {...}}
+LEAVE_STATE = {}  # chat_id -> {"step": "reason/personal", ...}
+
+# ----- Helpers -----
+CLASS_BUTTONS = ["PreKG","LKG","UKG"] + [f"{i} Std" for i in range(1,13)]
+
+def section_buttons_for(cls_name):
+    if cls_name in ["11 Std","12 Std"]:
+        return ["A","A1","A2","B","C","C1"]
+    return ["A","B","C","D","E"]
+
+def get_students():
+    try:
+        return students_ws.get_all_records()
+    except:
+        return []
+
+def get_students_in_class_section(cls_name, section):
+    rows = get_students()
+    return [r for r in rows if r.get("Class")==cls_name and r.get("Section")==section]
+
+def reassign_rolls_alpha(cls_name, section):
+    rows = get_students_in_class_section(cls_name, section)
+    rows_sorted = sorted(rows, key=lambda r: (r.get("Name","").strip().lower()))
+    sheet_rows = students_ws.get_all_values()
+    header = sheet_rows[0]
+    col = {name: idx for idx,name in enumerate(header)}
+    for i, r in enumerate(rows_sorted, start=1):
+        found_row_idx = None
+        for row_idx in range(1, len(sheet_rows)):
+            row = sheet_rows[row_idx]
+            if (len(row) > max(col.values()) and
+                row[col["Name"]]==r["Name"] and
+                row[col["Class"]]==r["Class"] and
+                row[col["Section"]]==r["Section"] and
+                row[col["ParentPhone"]]==r["ParentPhone"]):
+                found_row_idx = row_idx+1
+                break
+        if found_row_idx:
+            students_ws.update_cell(found_row_idx, col["RollNo"]+1, i)
+
+def link_parent_chat(chat_id):
+    rows = get_students()
+    for i, r in enumerate(rows, start=2):
+        if str(r.get("ParentChatId","")).strip() == str(chat_id):
+            continue
+
+# ----- UI -----
+def parent_is_registered(chat_id):
+    rows = get_students()
+    return any(str(r.get("ParentChatId","")) == str(chat_id) for r in rows)
+
+def main_menu_kb(chat_id=None):
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row("📝 Register Student")
+    if chat_id and parent_is_registered(chat_id):
+        kb.row("🏖️ Leave Request")
+    return kb
+
+@bot.message_handler(commands=['start'])
+def start_cmd(msg):
+    bot.reply_to(msg, "👋 Welcome to School Attendance (Parents).", reply_markup=main_menu_kb(msg.chat.id))
+
+# ----- Registration -----
+@bot.message_handler(func=lambda m: m.text=="📝 Register Student")
+def reg_begin(msg):
+    chat_id = msg.chat.id
+    REG_STATE[chat_id] = {"step":"class", "data":{}}
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for c in CLASS_BUTTONS:
+        kb.add(c)
+    bot.reply_to(msg, "📚 Select your child's Class:", reply_markup=kb)
+
+@bot.message_handler(func=lambda m: m.chat.id in REG_STATE and REG_STATE[m.chat.id]["step"]=="class")
+def reg_section(msg):
+    chat_id = msg.chat.id
+    cls = msg.text.strip()
+    if cls not in CLASS_BUTTONS:
+        return bot.reply_to(msg, "⚠️ Choose a valid class from buttons.")
+    REG_STATE[chat_id]["data"]["Class"] = cls
+    REG_STATE[chat_id]["step"] = "section"
+
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for s in section_buttons_for(cls):
+        kb.add(s)
+    bot.reply_to(msg, f"🏷️ Choose Section for {cls}:", reply_markup=kb)
+
+@bot.message_handler(func=lambda m: m.chat.id in REG_STATE and REG_STATE[m.chat.id]["step"]=="section")
+def reg_phone(msg):
+    chat_id = msg.chat.id
+    sec = msg.text.strip().upper()
+    cls = REG_STATE[chat_id]["data"]["Class"]
+    if sec not in section_buttons_for(cls):
+        return bot.reply_to(msg, "⚠️ Choose a valid section from buttons.")
+    REG_STATE[chat_id]["data"]["Section"] = sec
+    REG_STATE[chat_id]["step"] = "phone"
+
+    kb = types.ReplyKeyboardRemove()
+    bot.reply_to(msg, "📱 Send Parent Phone number (with or without +country code):", reply_markup=kb)
+
+@bot.message_handler(func=lambda m: m.chat.id in REG_STATE and REG_STATE[m.chat.id]["step"]=="phone")
+def reg_name(msg):
+    chat_id = msg.chat.id
+    phone = msg.text.strip().replace(" ","")
+    if not phone:
+        return bot.reply_to(msg, "⚠️ Send a valid phone number.")
+    if not phone.startswith("+"):
+        phone = "+91" + phone
+    REG_STATE[chat_id]["data"]["ParentPhone"] = phone
+    REG_STATE[chat_id]["step"] = "name"
+    bot.reply_to(msg, "👤 Send Student Name (as per school documents):")
+
+@bot.message_handler(func=lambda m: m.chat.id in REG_STATE and REG_STATE[m.chat.id]["step"]=="name")
+def reg_save(msg):
+    chat_id = msg.chat.id
+    student_name = msg.text.strip()
+    data = REG_STATE[chat_id]["data"]
+    cls = data["Class"]
+    sec = data["Section"]
+    phone = data["ParentPhone"]
+
+    # Append to Students (temp roll, will be fixed by sorter)
+    students_ws.append_row(["", student_name, cls, sec, phone, str(chat_id), "Yes"], value_input_option='USER_ENTERED')
+
+    # Re-assign rolls alphabetically
+    time.sleep(1)
+    reassign_rolls_alpha(cls, sec)
+
+    REG_STATE.pop(chat_id, None)
+    bot.reply_to(msg, f"✅ Registered {student_name} ({cls}-{sec}).\nFrom the first day, if your child skips class, you’ll be notified.", reply_markup=main_menu_kb(chat_id))
+
+# ----- Leave Request -----
+@bot.message_handler(func=lambda m: m.text=="🏖️ Leave Request")
+def leave_begin(msg):
+    chat_id = msg.chat.id
+    if not parent_is_registered(chat_id):
+        return bot.reply_to(msg, "⚠️ Please register your child first.", reply_markup=main_menu_kb(chat_id))
+    LEAVE_STATE[chat_id] = {"step":"reason"}
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("🤒 Illness", "🙋 Personal Reason")
+    bot.reply_to(msg, "Select today's leave reason (available until 08:45 AM):", reply_markup=kb)
+
+@bot.message_handler(func=lambda m: m.chat.id in LEAVE_STATE and LEAVE_STATE[m.chat.id]["step"]=="reason")
+def leave_reason(msg):
+    chat_id = msg.chat.id
+    reason = msg.text.strip()
+    if reason not in ["🤒 Illness","🙋 Personal Reason"]:
+        return bot.reply_to(msg, "Use the buttons, please.")
+    if reason=="🙋 Personal Reason":
+        LEAVE_STATE[chat_id]["step"]="reason_text"
+        return bot.reply_to(msg, "Please type the personal reason:")
+    commit_leave(chat_id, "Illness", msg)
+
+@bot.message_handler(func=lambda m: m.chat.id in LEAVE_STATE and LEAVE_STATE[m.chat.id]["step"]=="reason_text")
+def leave_reason_text(msg):
+    chat_id = msg.chat.id
+    text = msg.text.strip()
+    commit_leave(chat_id, text, msg)
+
+def commit_leave(chat_id, reason_text, msg_obj):
+    rows = students_ws.get_all_records()
+    stu = next((r for r in rows if str(r.get("ParentChatId"))==str(chat_id)), None)
+    if not stu:
+        LEAVE_STATE.pop(chat_id, None)
+        return bot.reply_to(msg_obj, "⚠️ You are not registered. Please register first.", reply_markup=main_menu_kb(chat_id))
+
+    d = today()
+    leaves_ws.append_row([d, stu["RollNo"], stu["Name"], stu["Class"], stu["Section"], reason_text, "Approved"])
+    attendance_ws.append_row([d, stu["Class"], stu["Section"], stu["RollNo"], stu["Name"], "Leave", reason_text, "Parent"])
+
+    LEAVE_STATE.pop(chat_id, None)
+    bot.reply_to(msg_obj, f"✅ Leave marked for {stu['Name']} today ({reason_text}).", reply_markup=main_menu_kb(chat_id))
+
+print("👨‍👩 Parents Bot is running…")
+
+
+# --------------- Flask + Keep Alive + Notify ---------------
+import threading
+import requests
+from flask import Flask, request
+
+app = Flask(__name__)
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "")
+KEEP_ALIVE_URL = os.getenv("KEEP_ALIVE_URL", "")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", f"https://{RENDER_URL}/{BOT_TOKEN}" if RENDER_URL else "")
+
+@app.route('/', methods=['GET'])
+def home():
+    return "✅ School Attendance Bot — live", 200
+
+@app.route("/school/notify", methods=["POST"])
+def school_notify():
+    try:
+        auth = request.headers.get("Authorization","")
+        if PARENT_NOTIFY_SECRET and auth != f"Bearer {PARENT_NOTIFY_SECRET}":
+            return "Unauthorized", 403
+        data = request.get_json(force=True)
+        date = data.get("date")
+        cls = data.get("class")
+        sec = data.get("section")
+        absentees = data.get("absentees", [])
+        for a in absentees:
+            chat_id = str(a.get("parent_chat_id","")).strip()
+            name = a.get("name","")
+            reg_id = a.get("reg_id","")
+            if chat_id and chat_id != "...":
+                bot.send_message(chat_id, f"⚠️ Your child {name} ({reg_id}) was marked ABSENT on {date} for class {cls}-{sec}.")
+            else:
+                print(f"ℹ️ Parent not linked yet for {name} ({reg_id})")
+        return "OK", 200
+    except Exception as e:
+        print("❌ Error in /school/notify:", e)
+        return "Error", 500
+
+@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+def telegram_webhook():
+    try:
+        update = telebot.types.Update.de_json(request.data.decode('utf-8'))
+        bot.process_new_updates([update])
+        return "OK", 200
+    except Exception as e:
+        print("⚠️ Webhook error:", e)
+        return "Error", 500
+
+def keep_alive():
+    if not RENDER_URL and not KEEP_ALIVE_URL:
+        print("⚠️ No keep-alive configured; skipping pinger.")
+        return
+    url_to_ping = KEEP_ALIVE_URL or f"https://{RENDER_URL}/"
+    while True:
+        try:
+            requests.get(url_to_ping, timeout=10)
+            requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe", timeout=10)
+            print("🔁 Keep-alive ping sent.")
+        except Exception as e:
+            print("⚠️ Keep-alive ping failed:", e)
+        time.sleep(300)
+
+if __name__ == "__main__":
+    print("🤖 School Bot starting...")
+    if WEBHOOK_URL:
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.set_webhook(url=WEBHOOK_URL)
+            print(f"✅ Webhook set to: {WEBHOOK_URL}")
+        except Exception as e:
+            print("❌ Failed to set webhook:", e)
+    threading.Thread(target=keep_alive, daemon=True).start()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
