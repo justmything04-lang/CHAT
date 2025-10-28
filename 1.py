@@ -36,6 +36,9 @@ KEEP_ALIVE_URL = os.getenv("KEEP_ALIVE_URL", "")
 
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "")
 WHATSAPP_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID", "")
+MSG91_AUTH_KEY = os.getenv("MSG91_AUTH_KEY", "")
+MSG91_SENDER_ID = os.getenv("MSG91_WHATSAPP_SENDER_ID", "")
+MSG91_TEMPLATE_PARENT_INVITE = os.getenv("MSG91_WHATSAPP_TEMPLATE_ID_PARENT_INVITE", "")
 
 # Message templates from ENV (editable without redeploy)
 TPL_PARENT_WELCOME = os.getenv("PARENT_WELCOME_MSG",
