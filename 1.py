@@ -89,28 +89,45 @@ def safe_send_chat(chat_id, text, **kwargs):
 
 
 
-# ---------------- Twilio SMS Helper ----------------
-from twilio.rest import Client
+# ---------------- MSG91 WhatsApp Helper ----------------
+def send_whatsapp_via_msg91(to_number_e164: str, deep_link: str) -> bool:
+    """
+    Send a WhatsApp template message via MSG91 with a single variable ({{1}} = deep_link).
+    to_number_e164: can be '+91xxxxxxxxxx' or '91xxxxxxxxxx' or 'xxxxxxxxxx'
+    """
+    if not (MSG91_AUTH_KEY and MSG91_SENDER_ID and MSG91_TEMPLATE_PARENT_INVITE):
+        print("⚠️ MSG91 not configured (auth/sender/template).")
+        return False
 
-def send_sms_via_twilio(to_number, message):
-    sid = os.getenv("TWILIO_ACCOUNT_SID")
-    token = os.getenv("TWILIO_AUTH_TOKEN")
-    service_sid = os.getenv("TWILIO_MESSAGING_SERVICE_SID")  # Messaging Service SID
-    if not sid or not token or not service_sid:
-        print("⚠️ Twilio not configured properly.")
-        return False
+    # MSG91 expects numbers without '+'; include country code.
+    num = to_number_e164.strip().replace(" ", "")
+    if num.startswith("+"):
+        num = num[1:]
+
+    payload = {
+        "integrated_number": str(MSG91_SENDER_ID),       # your approved WA business number
+        "recipient_number":  str(num),                   # parent's number (no '+')
+        "template_id":       str(MSG91_TEMPLATE_PARENT_INVITE),
+        "variables":         [deep_link]                 # {{1}} = link
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authkey": MSG91_AUTH_KEY
+    }
+
     try:
-        client = Client(sid, token)
-        msg = client.messages.create(
-            body=message,
-            messaging_service_sid=service_sid,
-            to=to_number
+        r = requests.post(
+            "https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/",
+            json=payload, headers=headers, timeout=20
         )
-        print("📩 SMS sent:", msg.sid)
-        return True
+        ok = (200 <= r.status_code < 300) and ("success" in r.text.lower())
+        print("MSG91 WA send:", r.status_code, r.text[:160])
+        return ok
     except Exception as e:
-        print("❌ SMS send failed:", e)
+        print("❌ MSG91 send error:", e)
         return False
+
 
 # ---------------- Google Sheets Auth ----------------
 try:
@@ -744,19 +761,19 @@ def register_parent_number(msg):
     ensure_parent_columns(sheet)
     set_parent_info(sheet, reg_id, phone=phone)
 
-    # One-time SMS invite via Twilio (only if not linked already)
+        # One-time WA invite via MSG91 (only if not linked already)
     info = get_parent_info(sheet, reg_id)
     invited = info.get("ParentInvited","").lower() == "yes"
-    linked = info.get("ParentLinked","").lower() == "yes"
+    linked  = info.get("ParentLinked","").lower() == "yes"
 
     if not linked and not invited and BOT_USERNAME:
-        invite_text = TPL_PARENT_INVITE.format(bot_username=BOT_USERNAME, reg_id=reg_id)
-        ok = send_sms_via_twilio(phone, invite_text)
+        deep_link = f"https://t.me/{BOT_USERNAME}?start=parent_{reg_id}"
+        ok = send_whatsapp_via_msg91(phone, deep_link)
         set_parent_info(sheet, reg_id, invited=True)
         if ok:
-            print(f"✅ Twilio SMS invite sent to {phone} (reg {reg_id}).")
+            print(f"✅ MSG91 WhatsApp invite sent to {phone} (reg {reg_id}).")
         else:
-            print(f"⚠️ Twilio SMS invite failed for {phone} (reg {reg_id}).")
+            print(f"⚠️ MSG91 WhatsApp invite failed for {phone} (reg {reg_id}).")
 
     parent_pending.pop(uid, None)
     kb = get_student_keyboard(uid)
