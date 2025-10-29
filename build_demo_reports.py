@@ -85,7 +85,7 @@ def mark_attendance(df_master: pd.DataFrame,
                 rows.append([
                     r["Name"],
                     r["Reg ID"],
-                    str(day.date()),
+                    str(day.date()),  # keep YYYY-MM-DD string for saving
                     "-",                               # EasterEgg placeholder
                     f"{str(day.date())} 09:{random.randint(10,59):02d}:00",  # Timestamp-ish
                     r["Reg ID"]                         # Telegram ID = Reg ID (demo)
@@ -95,9 +95,14 @@ def mark_attendance(df_master: pd.DataFrame,
 
 def absentees_for_day(df_master: pd.DataFrame, attendance_df: pd.DataFrame, day_str: str) -> pd.DataFrame:
     """Who is absent on a specific date (by Reg ID)?"""
-    present_ids = set(attendance_df.query("Date == @day_str")["Reg ID"].astype(str))
+    if attendance_df.empty:
+        present_ids = set()
+    else:
+        present_ids = set(attendance_df[attendance_df["Date"] == day_str]["Reg ID"].astype(str))
     all_ids = set(df_master["Reg ID"].astype(str))
     abs_ids = sorted([rid for rid in all_ids if rid not in present_ids])
+    if not abs_ids:
+        return pd.DataFrame(columns=["Name","Reg ID","Date"])
     out = df_master.set_index("Reg ID").loc[abs_ids, ["Name"]].reset_index()
     out["Date"] = day_str
     return out[["Name","Reg ID","Date"]]
@@ -108,23 +113,39 @@ def band_from_pct(p: float) -> str:
     if p >= 0.6: return "Average"
     return "Low"
 
+def _prep_attendance_for_range(att_off: pd.DataFrame, att_on: pd.DataFrame) -> pd.DataFrame:
+    """Concat and convert Date to datetime64[ns] for robust range filtering."""
+    att_all = pd.concat([att_off, att_on], ignore_index=True)
+    if not att_all.empty:
+        att_all["Date"] = pd.to_datetime(att_all["Date"], format="%Y-%m-%d", errors="coerce")
+    return att_all
+
 def summarize_window(df_off: pd.DataFrame, df_on: pd.DataFrame,
                      att_off: pd.DataFrame, att_on: pd.DataFrame,
                      start_date: datetime.date, end_date: datetime.date) -> pd.DataFrame:
-    """Bi-weekly style (rolling) summary."""
+    """Bi-weekly style (rolling) summary using boolean masks (no .query())."""
     students = []
     all_days = pd.date_range(start_date, end_date, freq="D")
     classes_window = len(all_days)
-    att_all = pd.concat([att_off, att_on], ignore_index=True)
+
+    att_all = _prep_attendance_for_range(att_off, att_on)
+    start_ts = pd.Timestamp(start_date)
+    end_ts   = pd.Timestamp(end_date)
+
     for mode, df_m in [("Offline", df_off), ("Online", df_on)]:
         for _, r in df_m.iterrows():
             rid = str(r["Reg ID"])
             name = r["Name"]
-            pres = att_all.query("`Reg ID` == @rid and Date >= @str(start_date) and Date <= @str(end_date)")
-            present_days = pres["Date"].nunique()
+            if att_all.empty:
+                present_days = 0
+            else:
+                mask = (att_all["Reg ID"].astype(str) == rid) & att_all["Date"].between(start_ts, end_ts)
+                # count unique dates attended
+                present_days = att_all.loc[mask, "Date"].dt.normalize().nunique()
             abs_days = classes_window - present_days
             pct = present_days / classes_window if classes_window else 0.0
             students.append([rid, name, mode, classes_window, present_days, abs_days, pct, band_from_pct(pct)])
+
     cols = ["Reg ID","Name","Mode","Classes_Window","Presents_Window","Absents_Window","Attendance%_Window","Band"]
     return pd.DataFrame(students, columns=cols)
 
@@ -132,17 +153,25 @@ def summarize_month(df_off: pd.DataFrame, df_on: pd.DataFrame,
                     att_off: pd.DataFrame, att_on: pd.DataFrame,
                     month_start: datetime.date, month_end: datetime.date) -> pd.DataFrame:
     students = []
-    att_all = pd.concat([att_off, att_on], ignore_index=True)
+    att_all = _prep_attendance_for_range(att_off, att_on)
+    start_ts = pd.Timestamp(month_start)
+    end_ts   = pd.Timestamp(month_end)
+
     all_days = pd.date_range(month_start, month_end, freq="D")
     classes_month = len(all_days)
+
     for mode, df_m in [("Offline", df_off), ("Online", df_on)]:
         for _, r in df_m.iterrows():
             rid = str(r["Reg ID"]); name = r["Name"]
-            pres = att_all.query("`Reg ID` == @rid and Date >= @str(month_start) and Date <= @str(month_end)")
-            present_days = pres["Date"].nunique()
+            if att_all.empty:
+                present_days = 0
+            else:
+                mask = (att_all["Reg ID"].astype(str) == rid) & att_all["Date"].between(start_ts, end_ts)
+                present_days = att_all.loc[mask, "Date"].dt.normalize().nunique()
             abs_days = classes_month - present_days
             pct = present_days / classes_month if classes_month else 0.0
             students.append([rid, name, mode, classes_month, present_days, abs_days, pct, band_from_pct(pct)])
+
     cols = ["Reg ID","Name","Mode","Classes_Month","Presents_Month","Absents_Month","Attendance%_Month","Band_Month"]
     return pd.DataFrame(students, columns=cols)
 
@@ -150,17 +179,25 @@ def summarize_course(df_off: pd.DataFrame, df_on: pd.DataFrame,
                      att_off: pd.DataFrame, att_on: pd.DataFrame,
                      start_date: datetime.date, end_date: datetime.date) -> pd.DataFrame:
     students = []
-    att_all = pd.concat([att_off, att_on], ignore_index=True)
+    att_all = _prep_attendance_for_range(att_off, att_on)
+    start_ts = pd.Timestamp(start_date)
+    end_ts   = pd.Timestamp(end_date)
+
     all_days = pd.date_range(start_date, end_date, freq="D")
     classes_total = len(all_days)
+
     for mode, df_m in [("Offline", df_off), ("Online", df_on)]:
         for _, r in df_m.iterrows():
             rid = str(r["Reg ID"]); name = r["Name"]
-            pres = att_all.query("`Reg ID` == @rid and Date >= @str(start_date) and Date <= @str(end_date)")
-            present_days = pres["Date"].nunique()
+            if att_all.empty:
+                present_days = 0
+            else:
+                mask = (att_all["Reg ID"].astype(str) == rid) & att_all["Date"].between(start_ts, end_ts)
+                present_days = att_all.loc[mask, "Date"].dt.normalize().nunique()
             abs_days = classes_total - present_days
             pct = present_days / classes_total if classes_total else 0.0
             students.append([rid, name, mode, classes_total, present_days, abs_days, pct, band_from_pct(pct)])
+
     cols = ["Reg ID","Name","Mode","Classes_Total","Presents_Total","Absents_Total","Attendance%_Total","Band_Total"]
     return pd.DataFrame(students, columns=cols)
 
