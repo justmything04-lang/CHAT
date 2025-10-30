@@ -35,3 +35,6 @@ for _, ds, ws in day_tabs:
 for ws in tabs:
     absentees = _gs_read(lambda: ws.get_all_records())
     for a in absentees:
+
+
+s = _gs_read(lambda: settings_sheet.get_all_records())[0]
