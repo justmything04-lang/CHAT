@@ -1,46 +1,53 @@
-# ---------------- Teacher buttons (fixed) ----------------
-def _must_be_teacher(m):
-    return str(m.from_user.id) == str(TEACHER_ID) or (ADMIN_ID and str(m.from_user.id) == str(ADMIN_ID))
+def _write_biweekly_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Writes to (or creates) 'BiWeekly_Summary' in main workbook with sort & colours.
+    Columns: Mode, RegID, Name, Present, Absent, Percent, Band, WindowStart, WindowEnd, CreatedAt
+    """
+    try:
+        wb = client.open_by_key(SHEET_ID)
+        try:
+            ws = wb.worksheet("BiWeekly_Summary")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = wb.add_worksheet(title="BiWeekly_Summary", rows="2000", cols="10")
+            tab_gid = ws.id  # gspread gives you the worksheet id
+            ws.update("A1:J1", [[
+                "Mode","RegID","Name","Present","Absent","Percent","Band",
+                "WindowStart","WindowEnd","CreatedAt"
+            ]])
+            if set_frozen: 
+                try: set_frozen(ws, rows=1)
+                except Exception: pass
 
-@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📊 Top 3")
-def btn_top3(m):
-    if not _must_be_teacher(m): 
-        return safe_reply(m, "❌ Unauthorized.")
-    send_top3(m)
+        off_sorted = _sorted_by_band(off_rows)
+        on_sorted  = _sorted_by_band(on_rows)
 
-@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📅 EOD Report")
-def btn_eod(m):
-    if not _must_be_teacher(m): 
-        return safe_reply(m, "❌ Unauthorized.")
-    send_report(m)
+        def _fmt(mode, r):
+            rid, name, pres, absd, pct, band = r
+            return [mode, rid, name, pres, absd, round(pct*100,1), band, str(win_start), str(win_end), now_ts()]
 
-@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "🔄 Refresh Attendance")
-def btn_refresh(m):
-    if not _must_be_teacher(m): 
-        return safe_reply(m, "❌ Unauthorized.")
-    manual_refresh(m)
+        rows_to_write = [_fmt("Offline", r) for r in off_sorted] + [_fmt("Online", r) for r in on_sorted]
+        if rows_to_write:
+            ws.append_rows(rows_to_write, value_input_option='USER_ENTERED')
 
-@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "🕒 Change Time")
-def btn_change_time(m):
-    if not _must_be_teacher(m): 
-        return safe_reply(m, "❌ Unauthorized.")
-    safe_reply(m, "🕒 Please send the new Start Time (HH:MM):")
-    pending_time_change[str(m.from_user.id)] = {"stage": "start"}
-
-@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📅 Bi-Weekly Report")
-def btn_biweekly(m):
-    if not _must_be_teacher(m): 
-        return safe_reply(m, "❌ Unauthorized.")
-    manual_biweekly(m)
-
-@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📅 Monthly Report")
-def btn_monthly(m):
-    if not _must_be_teacher(m): 
-        return safe_reply(m, "❌ Unauthorized.")
-    manual_monthly(m)
-
-@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📘 Course Summary")
-def btn_course(m):
-    if not _must_be_teacher(m): 
-        return safe_reply(m, "❌ Unauthorized.")
-    manual_course_summary(m)
+        # Colour by band (optional if gspread_formatting available)
+        if format_cell_ranges and Color and CellFormat:
+            try:
+                vals = ws.get_all_records()
+                colors = {
+                    "Low":     Color(1, 0.8, 0.8),   # light red
+                    "Average": Color(1, 1, 0.8),     # light yellow
+                    "High":    Color(0.85, 1, 0.85), # light green
+                    "100%":    Color(0.85, 0.90, 1)  # light blue
+                }
+                fmt_cache = {k: CellFormat(backgroundColor=v, textFormat=TextFormat(bold=False)) for k, v in colors.items()}
+                for i, rec in enumerate(vals, start=2):
+                    band = rec.get("Band","")
+                    if band in fmt_cache:
+                        try:
+                            format_cell_ranges(ws, [(f"A{i}:J{i}", fmt_cache[band])])
+                        except Exception:
+                            pass
+            except Exception as e:
+                print("Colouring skipped:", e)
+    except Exception as e:
+        print("⚠️ BiWeekly sheet write error:", e)
