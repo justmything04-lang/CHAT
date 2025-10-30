@@ -337,3 +337,95 @@ def is_onboarding_complete(reg_id: str):
     if row:
         return str(row.get("ParentLinked","")).strip().lower() == "yes"
     return False
+
+
+
+
+
+
+
+
+
+
+
+@bot.message_handler(commands=['start'])
+def start_cmd(msg):
+    # Parse deep-link args (e.g., "/start parent_123")
+    txt = (msg.text or "").strip()
+    args = txt.split(" ", 1)[1].strip() if " " in txt else ""
+    uid  = str(msg.from_user.id)
+
+    # --- Parent linking flow ---
+    if args.startswith("parent_"):
+        reg_id = args.split("parent_", 1)[1].strip()
+        sheet, mode = find_sheet_for_reg(reg_id)
+        if not sheet:
+            safe_reply(msg, "⚠️ Student not found for linking. Ask the student to share correct link.")
+            return
+        ensure_parent_columns(sheet)
+        set_parent_info(sheet, reg_id, chat_id=msg.chat.id, linked=True)
+        safe_reply(msg, TPL_PARENT_WELCOME)
+        deliver_pending_for_reg(reg_id)
+
+        # ✅ send the student's one-time group link immediately if onboarding is complete
+        try:
+            if is_onboarding_complete(reg_id):
+                link = create_one_time_invite_for(int(reg_id), kind="student")
+                safe_send_chat(int(reg_id),
+                    "✅ Onboarding complete!\n"
+                    "Here is your permanent group link (works only for you):\n"
+                    f"{link}"
+                )
+                print(f"[ONBOARD] Sent one-time group link to student {reg_id}")
+        except Exception as e:
+            print("[ONBOARD] Failed to create/send student one-time link:", e)
+        return
+
+    # --- Recording student deep-link (immediate invite) ---
+    if args.startswith("rec_"):
+        try:
+            link = create_one_time_invite_for(int(uid), kind="recording")
+            safe_reply(msg,
+                "🎧 Recording student detected.\n"
+                "Tap this one-time link to join your class group (only you can use it):\n"
+                f"{link}"
+            )
+        except Exception as e:
+            safe_reply(msg, f"⚠️ Could not create your group link: {e}")
+        return
+
+    # --- Normal student deep-link (invite after onboarding completes) ---
+    if args.startswith("norm_"):
+        # mark this user in-memory so after parent links we send the group link
+        try:
+            global _invite_after_onboarding
+        except NameError:
+            _invite_after_onboarding = set()
+        _invite_after_onboarding.add(msg.from_user.id)
+        # Fall through to the normal welcome/registration UI (no return)
+
+    # --- Normal /start UI (no args) ---
+    if uid == str(TEACHER_ID) or (ADMIN_ID and uid == str(ADMIN_ID)):
+        kb = get_teacher_keyboard()
+        safe_reply(msg, "👋 Hello Sir! Your panel:", reply_markup=kb)
+        return
+
+    kb = get_student_keyboard(msg.from_user.id)
+    mode = get_user_mode(msg.from_user.id)
+    if mode:
+        safe_reply(
+            msg,
+            f"👋 Welcome back!\nYou are registered as **{mode.title()}**.\n\n"
+            "Just tap **📍 Mark Attendance** each day.",
+            reply_markup=kb
+        )
+    else:
+        safe_reply(
+            msg,
+            "👋 Welcome!\n\n"
+            "• Tap **📝 Register** once (bot will auto-save your Telegram ID as RegID and your Username).\n"
+            "• Choose **Offline** or **Online**.\n"
+            "• Then every day just tap **📍 Mark Attendance**.\n\n"
+            "Offline will ask for location; Online marks immediately.",
+            reply_markup=kb
+        )
