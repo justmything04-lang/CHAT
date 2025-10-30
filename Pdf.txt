@@ -1,0 +1,179 @@
+Perfect 👍 Here’s the final combined structured text draft — with the full features & flow explanation + pricing & terms refinements you asked for. This is ready to copy into Word/Google Docs → export as PDF.
+
+⸻
+
+📌 Attendance Automation & Parent Communication System
+
+⸻
+
+1. Introduction
+
+Our product is a Telegram-based automated attendance & parent communication system, designed specifically for academies.
+It reduces manual work, improves transparency, and keeps parents engaged in real time.
+
+The system works batch-wise and subject-wise:
+	•	Individual Plan: 1 Bot = 1 Batch + 1 Subject
+	•	Group Plan: 1 Bot = 1 Batch + Up to 3 Subjects
+
+This ensures accuracy, customization, and complete control for each group.
+
+⸻
+
+2. Key Problems We Solve
+
+❌ Manual attendance tracking consumes faculty time.
+❌ End-of-day absentee calculation and reporting is delayed.
+❌ Parents are unaware about absences until much later.
+❌ No structured performance reports (weekly, bi-weekly, monthly).
+❌ Communication gaps between academy ↔ student ↔ parents.
+
+✅ With our bot, all these problems are solved automatically.
+
+⸻
+
+3. Features (Complete Automation)
+
+📍 Attendance Marking
+	•	Students mark attendance with one tap (online mode) or with location proof (offline mode).
+	•	Prevents proxies by verifying Telegram ID and GPS.
+	•	Works only within academy’s allowed time window.
+
+📊 End-of-Day (EOD) Reports
+	•	Auto-generated absentee lists at the end of each day.
+	•	Faculty gets both offline & online absentee reports.
+	•	Parents of absentees notified automatically (Telegram).
+
+📅 Bi-Weekly Reports (Every 14 days)
+	•	Attendance summary of each student (present, absent, %).
+	•	Categorization: 100%, High, Average, Low (<60%).
+	•	Faculty/Admin get detailed sheet link + summary in group topic.
+	•	Parents of “Low” students alerted with caution messages.
+	•	Optionally, academy app can restrict access for Low-attendance cases.
+
+📅 Monthly Reports
+	•	Monthly summary with “Risk Watch” (≤50%).
+	•	Parents of “Risk” students notified with absence dates.
+	•	Faculty/Admin receive Google Sheet tab link + clean summary in group topic.
+
+📘 Course Summary (Till Date)
+	•	Complete overview from course start till current date.
+	•	Risk tracking across full subject duration.
+	•	New tab created in Google Sheet, shared with faculty/admin.
+
+🏆 Top 3 Performers
+	•	Automated ranking of top 3 attendance performers.
+	•	Posted in group topic + sent to faculty.
+
+👨‍👩‍👧 Parent Communication
+	•	Parent accounts linked with student IDs.
+	•	Parents receive instant absentee updates.
+	•	Parents of Low/Risk attendance students alerted separately.
+	•	WhatsApp invite (one-time) ensures smooth onboarding.
+
+📱 Teacher/Admin Controls
+
+Simple Telegram panel:
+	•	📊 Top 3
+	•	📅 EOD Report
+	•	📅 Bi-Weekly Report
+	•	📅 Monthly Report
+	•	📘 Course Summary
+	•	🔄 Refresh Attendance
+	•	🕒 Change Timings
+
+No need to check sheets daily — bot manages everything.
+
+⸻
+
+4. Ease of Use
+
+👩‍🎓 Students → Just tap “Mark Attendance” once a day.
+👨‍👩‍👧 Parents → Get auto Telegram updates, invited via WhatsApp (one-time).
+👩‍🏫 Faculty → View all reports directly in Telegram & Sheets.
+🏫 Management → Get real-time risk tracking & optional app restrictions.
+
+Everything runs automatically in the background.
+
+⸻
+
+5. Pricing & Payment Terms
+
+💰 Pricing Options
+	•	Individual Plan: ₹20,000 per batch per subject
+	•	Group Plan: ₹15,000 per subject (maximum 3 subjects per batch under one plan)
+
+⚠️ This is a recurring cost for every batch and every subject.
+	•	Example: 2 subjects × 2 batches →
+	•	Individual: ₹20,000 × 4 = ₹80,000
+	•	Group: ₹15,000 × 4 = ₹60,000
+
+Each subject-batch requires its own bot (to avoid mixing attendance data).
+
+⸻
+
+📌 Service Inclusions
+
+✔️ Full bot setup (Telegram + Sheets + Automation)
+✔️ Unlimited attendance marking
+✔️ Daily, Bi-Weekly, Monthly, Course Summary Reports
+✔️ Parent notifications (Telegram)
+✔️ Teacher panel commands (Top 3, Reports, Refresh, etc.)
+✔️ Hosting, support, and updates included
+
+⸻
+
+📌 WhatsApp Invite (One-time Setup)
+	•	Parents receive one-time WhatsApp invite message to join Telegram.
+	•	Cost of WhatsApp message (via MSG91/other provider) is borne by academy.
+	•	We only handle Telegram parent updates; WhatsApp invite is only for onboarding.
+
+Required from Academy for WhatsApp Invite Setup
+	1.	Registered WhatsApp Business Number (integrated with MSG91/other provider)
+	2.	Approved WhatsApp Template ID for parent invite
+	3.	Template variables (academy name, bot link)
+	4.	Authorization details (Auth key, Namespace, Sender ID)
+
+⸻
+
+📌 Why WhatsApp Invite Must Come from Academy’s Number
+	•	Builds trust and recognition with parents.
+	•	Parents respond better to the official academy number.
+	•	Future-proof → no dependency on external accounts.
+	•	Keeps academy’s brand identity legally intact.
+
+⸻
+
+📌 Refund Policy
+	•	Refunds only if requested within 14 days of usage.
+	•	5% processing fee deducted for service/transaction costs.
+	•	After 14 days → no refund, since service & integrations are already deployed.
+
+⸻
+
+6. Contracts & Agreements
+	•	All agreements will be digitally signed (e-Sign).
+	•	Includes:
+	•	Scope of features
+	•	Pricing per subject/batch
+	•	Recurring nature of payment
+	•	Support & update policy
+
+⸻
+
+7. Why This Price Is Worth It
+	•	Saves hundreds of faculty hours per month.
+	•	Real-time transparency with parents.
+	•	Professional automated reports (daily → monthly → full course).
+	•	Data-driven decision-making for management.
+	•	Builds accountability & goodwill with parents.
+	•	Scales easily across all subjects & batches.
+
+One-time per batch/subject investment = long-term efficiency & trust.
+
+⸻
+
+✅ This is the final polished version — professional, convincing, and complete.
+
+⸻
+
+👉 Do you want me to now generate the ready-to-send PDF version with this exact content and formatting (with nice headings, icons, branding space)?
