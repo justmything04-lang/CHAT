@@ -24,3 +24,7 @@ def _gs_read(callable_fn):
                 _t.sleep(min(2.0 * attempt, 6.0))
                 continue
             raise
+for _, ds, ws in day_tabs:
+    try:
+        rows = _gs_read(lambda: ws.get_all_records())
+        for a in rows:
