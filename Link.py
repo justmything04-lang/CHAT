@@ -1,7 +1,8 @@
 def _write_biweekly_sheet(win_start, win_end, off_rows, on_rows):
     """
-    Writes to (or creates) 'BiWeekly_Summary' in main workbook with sort & colours.
+    Writes/updates 'BiWeekly_Summary' in main workbook with sort & colours.
     Columns: Mode, RegID, Name, Present, Absent, Percent, Band, WindowStart, WindowEnd, CreatedAt
+    Returns: worksheet gid (ws.id) or None on error.
     """
     try:
         wb = client.open_by_key(SHEET_ID)
@@ -9,14 +10,15 @@ def _write_biweekly_sheet(win_start, win_end, off_rows, on_rows):
             ws = wb.worksheet("BiWeekly_Summary")
         except gspread.exceptions.WorksheetNotFound:
             ws = wb.add_worksheet(title="BiWeekly_Summary", rows="2000", cols="10")
-            tab_gid = ws.id  # gspread gives you the worksheet id
             ws.update("A1:J1", [[
                 "Mode","RegID","Name","Present","Absent","Percent","Band",
                 "WindowStart","WindowEnd","CreatedAt"
             ]])
-            if set_frozen: 
-                try: set_frozen(ws, rows=1)
-                except Exception: pass
+            if set_frozen:
+                try:
+                    set_frozen(ws, rows=1)
+                except Exception:
+                    pass
 
         off_sorted = _sorted_by_band(off_rows)
         on_sorted  = _sorted_by_band(on_rows)
@@ -49,25 +51,8 @@ def _write_biweekly_sheet(win_start, win_end, off_rows, on_rows):
                             pass
             except Exception as e:
                 print("Colouring skipped:", e)
+
+        return ws.id  # ✅ return gid so caller can build link
     except Exception as e:
         print("⚠️ BiWeekly sheet write error:", e)
-
-
-
-
-
-
-    # Write to sheet (sorted + coloured) and get its gid
-    tab_gid = _write_biweekly_sheet(win_start, win_end, off_detailed, on_detailed)
-
-    # Admin/Faculty message (build link if we got gid)
-    if tab_gid:
-        sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
-        admin_msg = public_msg + f"\n\n📄 Detailed rows are in: {sheet_link}"
-    else:
-        admin_msg = public_msg + "\n\n📄 Detailed rows are in the 'BiWeekly_Summary' tab."
-
-    if TEACHER_ID:
-        safe_send_chat(TEACHER_ID, admin_msg)
-    if ADMIN_ID:
-        safe_send_chat(ADMIN_ID, admin_msg)
+        return None
