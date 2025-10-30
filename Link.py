@@ -57,11 +57,17 @@ def _write_biweekly_sheet(win_start, win_end, off_rows, on_rows):
 
 
 
-# Admin/Faculty message (just the same text + note about sheet)
-    sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
-    admin_msg = public_msg + f"\n\n📄 Detailed rows are in: {sheet_link}"
-    if TEACHER_ID:
-                  safe_send_chat(TEACHER_ID, admin_msg)
-    if ADMIN_ID:
-                  safe_send_chat(ADMIN_ID, admin_msg)
+    # Write to sheet (sorted + coloured) and get its gid
+    tab_gid = _write_biweekly_sheet(win_start, win_end, off_detailed, on_detailed)
 
+    # Admin/Faculty message (build link if we got gid)
+    if tab_gid:
+        sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
+        admin_msg = public_msg + f"\n\n📄 Detailed rows are in: {sheet_link}"
+    else:
+        admin_msg = public_msg + "\n\n📄 Detailed rows are in the 'BiWeekly_Summary' tab."
+
+    if TEACHER_ID:
+        safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:
+        safe_send_chat(ADMIN_ID, admin_msg)
