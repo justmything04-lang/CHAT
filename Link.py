@@ -321,3 +321,19 @@ If you want, I can also add a /grouplink command for teacher/admin to regenerate
         print("[ONBOARD] Failed to create/send student one-time link:", e)
 
     return
+
+
+def is_onboarding_complete(reg_id: str):
+    """
+    A student is 'complete' when:
+      • they exist in either MasterList (offline) or OnlineMasterList (online)
+      • AND ParentLinked == 'Yes'
+    """
+    if online_master_sheet:
+        row = find_student_by_reg(online_master_sheet, reg_id)
+        if row:
+            return str(row.get("ParentLinked","")).strip().lower() == "yes"
+    row = find_student_by_reg(master_sheet, reg_id)
+    if row:
+        return str(row.get("ParentLinked","")).strip().lower() == "yes"
+    return False
