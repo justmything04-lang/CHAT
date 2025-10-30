@@ -295,3 +295,29 @@ What this gives you now
 	•	✅ Fully integrated into your existing Sheets + bot structure.
 
 If you want, I can also add a /grouplink command for teacher/admin to regenerate a user’s one-time link on demand.
+
+
+
+
+
+
+
+
+
+
+    safe_reply(msg, TPL_PARENT_WELCOME)
+    deliver_pending_for_reg(reg_id)
+
+    # 🎯 NEW: if onboarding is complete now, DM the student their one-time group link
+    try:
+        if is_onboarding_complete(reg_id):
+            link = create_one_time_invite_for(int(reg_id), kind="student")
+            safe_send_chat(int(reg_id),
+                f"✅ Onboarding complete!\n"
+                f"Here is your permanent group link:\n{link}"
+            )
+            print(f"[ONBOARD] Sent one-time group link to student {reg_id}")
+    except Exception as e:
+        print("[ONBOARD] Failed to create/send student one-time link:", e)
+
+    return
