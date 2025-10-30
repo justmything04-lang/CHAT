@@ -1,50 +1,46 @@
-# ---------------- Teacher button handler ----------------
-@bot.message_handler(func=lambda msg: isinstance(msg.text, str) and msg.text in [
-    "📊 Top 3", "📅 EOD Report", "🔄 Refresh Attendance", "🕒 Change Time"
-])
-@bot.message_handler(func=lambda msg: isinstance(msg.text, str) and msg.text == "📅 Bi-Weekly Report")
-def handle_biweekly_button(msg):
-    manual_biweekly(msg)  # just reuse the command handler
+# ---------------- Teacher buttons (fixed) ----------------
+def _must_be_teacher(m):
+    return str(m.from_user.id) == str(TEACHER_ID) or (ADMIN_ID and str(m.from_user.id) == str(ADMIN_ID))
 
-@bot.message_handler(func=lambda msg: isinstance(msg.text, str) and msg.text == "📅 Monthly Report")
-def handle_monthly_button(msg):
-    manual_monthly(msg)
+@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📊 Top 3")
+def btn_top3(m):
+    if not _must_be_teacher(m): 
+        return safe_reply(m, "❌ Unauthorized.")
+    send_top3(m)
 
-@bot.message_handler(func=lambda msg: isinstance(msg.text, str) and msg.text == "📘 Course Summary")
-def handle_course_button(msg):
-    manual_course_summary(msg)
+@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📅 EOD Report")
+def btn_eod(m):
+    if not _must_be_teacher(m): 
+        return safe_reply(m, "❌ Unauthorized.")
+    send_report(m)
 
-def handle_teacher_buttons(msg):
-    uid = str(msg.from_user.id)
-    text = msg.text
+@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "🔄 Refresh Attendance")
+def btn_refresh(m):
+    if not _must_be_teacher(m): 
+        return safe_reply(m, "❌ Unauthorized.")
+    manual_refresh(m)
 
-    if uid != str(TEACHER_ID):
-        safe_reply(msg, "❌ You are not authorized for this command.")
-        return
+@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "🕒 Change Time")
+def btn_change_time(m):
+    if not _must_be_teacher(m): 
+        return safe_reply(m, "❌ Unauthorized.")
+    safe_reply(m, "🕒 Please send the new Start Time (HH:MM):")
+    pending_time_change[str(m.from_user.id)] = {"stage": "start"}
 
-    if text == "📊 Top 3":
-        send_top3(msg)
-    elif text == "📅 EOD Report":
-        send_report(msg)
-    elif text == "🔄 Refresh Attendance":
-        manual_refresh(msg)
-    elif text == "🕒 Change Time":
-        safe_reply(msg, "🕒 Please send the new Start Time (HH:MM):")
-        pending_time_change[uid] = {"stage": "start"}
+@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📅 Bi-Weekly Report")
+def btn_biweekly(m):
+    if not _must_be_teacher(m): 
+        return safe_reply(m, "❌ Unauthorized.")
+    manual_biweekly(m)
 
-# ----- Registration core -----
-def upsert_student(sheet, reg_id, name, username):
-    try:
-        rows = sheet.get_all_records()
-        for i, r in enumerate(rows, start=2):
-            if str(r.get("Reg ID","")).strip() == str(reg_id):
-                # Update name if different
-                if sheet.cell(i, 1).value != name:
-                    sheet.update_cell(i, 1, name)
-                return "updated"
-        # Append new
-        sheet.append_row([name, str(reg_id)], value_input_option='USER_ENTERED')
-        return "inserted"
-    except Exception as e:
-        print("upsert_student error:", e)
-        return "error"
+@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📅 Monthly Report")
+def btn_monthly(m):
+    if not _must_be_teacher(m): 
+        return safe_reply(m, "❌ Unauthorized.")
+    manual_monthly(m)
+
+@bot.message_handler(func=lambda m: isinstance(m.text, str) and m.text == "📘 Course Summary")
+def btn_course(m):
+    if not _must_be_teacher(m): 
+        return safe_reply(m, "❌ Unauthorized.")
+    manual_course_summary(m)
