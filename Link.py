@@ -51,3 +51,17 @@ def _write_biweekly_sheet(win_start, win_end, off_rows, on_rows):
                 print("Colouring skipped:", e)
     except Exception as e:
         print("⚠️ BiWeekly sheet write error:", e)
+
+
+
+
+
+
+# Admin/Faculty message (just the same text + note about sheet)
+    sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
+    admin_msg = public_msg + f"\n\n📄 Detailed rows are in: {sheet_link}"
+    if TEACHER_ID:
+                  safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:
+                  safe_send_chat(ADMIN_ID, admin_msg)
+
