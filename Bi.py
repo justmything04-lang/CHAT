@@ -495,3 +495,66 @@ If you want I can now:
 	•	(C) walk you through deploying and testing one worker at a time.
 
 Which do you prefer?
+
+
+
+
+
+
+
+def _is_last_day_of_month(d):
+    return d.day == calendar.monthrange(d.year, d.month)[1]
+
+def monthly_worker():
+    """
+    Checks every 2 minutes.
+    On the LAST CALENDAR DAY of the month:
+      - trigger 5 minutes BEFORE EndTime (primary)
+      - if missed, fallback 2 hours AFTER EndTime
+    Avoids duplicate send within the same month.
+    """
+    last_sent_for = None  # key = "YYYY-MM"
+    while True:
+        try:
+            now_local = datetime.now(ZoneInfo(TIMEZONE))
+            today     = now_local.date()
+
+            if not _is_last_day_of_month(today):
+                time.sleep(120)
+                continue
+
+            key = today.strftime("%Y-%m")
+            if last_sent_for == key:
+                time.sleep(120)
+                continue
+
+            s = get_cached_settings()
+            end_str = s.get("EndTime","23:59").strip()
+            try:
+                end_dt = datetime.strptime(str(today) + " " + end_str, "%Y-%m-%d %H:%M")
+                end_dt = end_dt.replace(tzinfo=ZoneInfo(TIMEZONE))
+            except Exception:
+                end_dt = now_local
+
+            pre_trigger_dt  = end_dt - timedelta(minutes=5)
+            post_trigger_dt = end_dt + timedelta(hours=2)
+
+            if pre_trigger_dt <= now_local < post_trigger_dt:
+                print("⏱️ Monthly (primary, -5 min) window…")
+                send_monthly_report()
+                last_sent_for = key
+                time.sleep(120)
+                continue
+
+            if now_local >= post_trigger_dt:
+                print("⏱️ Monthly (fallback, +2h) window…")
+                send_monthly_report()
+                last_sent_for = key
+                time.sleep(120)
+                continue
+
+            time.sleep(120)
+        except Exception as e:
+            print("monthly_worker error:", e)
+            time.sleep(180)
+
