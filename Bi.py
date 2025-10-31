@@ -558,3 +558,26 @@ def monthly_worker():
             print("monthly_worker error:", e)
             time.sleep(180)
 
+
+
+
+
+
+
+
+
+
+# ---------------- Simple cache (TTL = 60s) ----------------
+CACHE_TTL = 60
+_cache = {
+
+
+# ---------------- Simple cache (TTL = 60s) ----------------
+CACHE_TTL = 60
+_cache = {
+    "settings": (None, 0),
+    "master": (None, 0),
+    "attendance_rows": (None, 0),
+    "online_master": (None, 0),
+    "online_attendance_rows": (None, 0)
+}
