@@ -268,7 +268,7 @@ IndentationError: unexpected indent
 
     print("✅ Bi-Weekly: topic posted, admin notified, sheet updated, parents cautioned, app lock attempted.")
 
-      for student in get_cached_master_list():
+    for student in get_cached_master_list():
         msg_s = APP_STUDENT_HIGH.format(
             student_name=student["Name"],
             period_type="Bi-Weekly",
@@ -283,4 +283,361 @@ IndentationError: unexpected indent
         if student.get("ParentChatId"):
             safe_send_chat(student["ParentChatId"], msg_p)
         db.update_streak(student["Reg ID"], boost=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ---------------- Background workers ----------------
+
+def _is_eod_done_for(today_str):
+    """Returns True if today's offline+online absentee tabs already exist."""
+    try:
+        off_file = client.open_by_key(ABSENTEE_SHEET_ID)
+        on_file  = client.open_by_key(ONLINE_ABSENTEE_SHEET_ID)
+        off_done = any(ws.title == f"{today_str}-offline" for ws in off_file.worksheets())
+        on_done  = any(ws.title == f"{today_str}-online"  for ws in on_file.worksheets())
+        return off_done and on_done
+    except Exception as e:
+        print("_is_eod_done_for check failed:", e)
+        return False
+
+def auto_eod_worker():
+    """
+    Checks every 2 minutes.
+    Triggers EOD 5 minutes BEFORE EndTime (primary), and
+    if still not done, triggers again 2 hours AFTER EndTime (fallback).
+    Uses sheet-tab existence and Control sheet to avoid duplicates across processes.
+    """
+    while True:
+        try:
+            s = get_cached_settings()
+            end_str = s.get("EndTime", "23:59").strip()
+            today   = get_today_date()
+
+            # build today's localized end time
+            try:
+                end_dt = datetime.strptime(today + " " + end_str, "%Y-%m-%d %H:%M")
+                end_dt = end_dt.replace(tzinfo=ZoneInfo(TIMEZONE))
+            except Exception:
+                end_dt = datetime.now(ZoneInfo(TIMEZONE))
+
+            pre_trigger_dt  = end_dt - timedelta(minutes=5)
+            post_trigger_dt = end_dt + timedelta(hours=2)
+            now_local       = datetime.now(ZoneInfo(TIMEZONE))
+
+            # persistent guard: check if we already ran EOD today (control key)
+            last_eod = _control_get("LastEOD") or ""
+            if last_eod == today:
+                time.sleep(120)
+                continue
+
+            # also fallback to sheet-existence check (safe)
+            if _is_eod_done_for(today):
+                # mark control so other instances don't also run
+                _control_set("LastEOD", today)
+                time.sleep(120)
+                continue
+
+            if pre_trigger_dt <= now_local < post_trigger_dt:
+                print("⏱️ Auto EOD (primary, -5 min) window…")
+                # run and mark
+                generate_eod_and_notify()
+                _control_set("LastEOD", today)
+                time.sleep(120)
+                continue
+
+            if now_local >= post_trigger_dt:
+                print("⏱️ Auto EOD (fallback, +2h) window…")
+                if not _is_eod_done_for(today):
+                    generate_eod_and_notify()
+                _control_set("LastEOD", today)
+                time.sleep(120)
+                continue
+
+            time.sleep(120)
+
+        except Exception as e:
+            print("auto_eod_worker error:", e)
+            time.sleep(180)
+
+
+def biweekly_worker():
+    """
+    Checks every 2 minutes.
+    On the LAST day of the current 14-day window:
+      - trigger 5 minutes BEFORE EndTime (primary)
+      - if missed, fallback 2 hours AFTER EndTime
+    Uses Control sheet to avoid duplicates across processes.
+    """
+    while True:
+        try:
+            now_local = datetime.now(ZoneInfo(TIMEZONE))
+            today     = now_local.date()
+
+            start = _get_class_start_date()
+            win_start, win_end, is_boundary = _current_biweekly_window(today, start)
+
+            if not is_boundary:
+                time.sleep(120)
+                continue
+
+            key = f"BiWeekly_{win_end}"
+            last = _control_get("LastBiWeekly") or ""
+            if last == str(win_end):
+                time.sleep(120)
+                continue
+
+            s = get_cached_settings()
+            end_str = s.get("EndTime","23:59").strip()
+            try:
+                end_dt = datetime.strptime(str(today) + " " + end_str, "%Y-%m-%d %H:%M")
+                end_dt = end_dt.replace(tzinfo=ZoneInfo(TIMEZONE))
+            except Exception:
+                end_dt = now_local
+
+            pre_trigger_dt  = end_dt - timedelta(minutes=5)
+            post_trigger_dt = end_dt + timedelta(hours=2)
+
+            if pre_trigger_dt <= now_local < post_trigger_dt:
+                print("⏱️ Bi-Weekly (primary, -5 min) window…")
+                send_biweekly_report()
+                _control_set("LastBiWeekly", str(win_end))
+                # publish Top3 together with Bi-Weekly
+                try:
+                    publish_top3_to_teacher_and_topic()
+                except Exception as e:
+                    print("Bi-Weekly -> Top3 publish error:", e)
+                time.sleep(120)
+                continue
+
+            if now_local >= post_trigger_dt:
+                print("⏱️ Bi-Weekly (fallback, +2h) window…")
+                send_biweekly_report()
+                _control_set("LastBiWeekly", str(win_end))
+                try:
+                    publish_top3_to_teacher_and_topic()
+                except Exception as e:
+                    print("Bi-Weekly -> Top3 publish error:", e)
+                time.sleep(120)
+                continue
+
+            time.sleep(120)
+        except Exception as e:
+            print("biweekly_worker error:", e)
+            time.sleep(180)
+
+
+def _is_last_day_of_month(d):
+    return d.day == calendar.monthrange(d.year, d.month)[1]
+
+def monthly_worker():
+    """
+    Checks every 2 minutes.
+    Trigger when 30-day window ends (30 days after class start cycle), using Settings start date as anchor.
+    Uses Control sheet to avoid duplicates across processes.
+    """
+    while True:
+        try:
+            now_local = datetime.now(ZoneInfo(TIMEZONE))
+            today     = now_local.date()
+
+            start = _get_class_start_date()
+            # compute 30-day windows:
+            days = _days_since(start, today)
+            if days < 0:
+                time.sleep(120); continue
+            idx = days // 30
+            win_start = start + timedelta(days=30*idx)
+            win_end = win_start + timedelta(days=29)  # 30-day window inclusive
+            is_boundary = (today == win_end)
+
+            if not is_boundary:
+                time.sleep(120)
+                continue
+
+            key = f"Monthly_{win_end.strftime('%Y-%m-%d')}"
+            last = _control_get("LastMonthly") or ""
+            if last == str(win_end):
+                time.sleep(120)
+                continue
+
+            s = get_cached_settings()
+            end_str = s.get("EndTime","23:59").strip()
+            try:
+                end_dt = datetime.strptime(str(today) + " " + end_str, "%Y-%m-%d %H:%M")
+                end_dt = end_dt.replace(tzinfo=ZoneInfo(TIMEZONE))
+            except Exception:
+                end_dt = now_local
+
+            pre_trigger_dt  = end_dt - timedelta(minutes=5)
+            post_trigger_dt = end_dt + timedelta(hours=2)
+
+            if pre_trigger_dt <= now_local < post_trigger_dt:
+                print("⏱️ Monthly (primary, -5 min) window…")
+                send_monthly_report()
+                _control_set("LastMonthly", str(win_end))
+                try:
+                    publish_top3_to_teacher_and_topic()
+                except Exception as e:
+                    print("Monthly -> Top3 publish error:", e)
+                time.sleep(120)
+                continue
+
+            if now_local >= post_trigger_dt:
+                print("⏱️ Monthly (fallback, +2h) window…")
+                send_monthly_report()
+                _control_set("LastMonthly", str(win_end))
+                try:
+                    publish_top3_to_teacher_and_topic()
+                except Exception as e:
+                    print("Monthly -> Top3 publish error:", e)
+                time.sleep(120)
+                continue
+
+            time.sleep(120)
+        except Exception as e:
+            print("monthly_worker error:", e)
+            time.sleep(180)
+
+
+def parent_queue_retry_worker():
+    """Try to deliver pending parent notifications once a day."""
+    while True:
+        try:
+            pending = parentqueue_list_pending()
+            if not pending:
+                time.sleep(3600*6)  # sleep 6h if none
+                continue
+
+            # For each pending, if parent linked now -> send
+            for row_idx, r in pending:
+                reg_id = str(r.get("RegID","")).strip()
+                sheet, mode = find_sheet_for_reg(reg_id)
+                info = get_parent_info(sheet, reg_id) if sheet else {}
+                chatid = info.get("ParentChatId","").strip()
+                linked = info.get("ParentLinked","").strip().lower() == "yes"
+                if chatid and linked:
+                    try:
+                        safe_send_chat(chatid, r.get("Message",""))
+                        parentqueue_mark_sent(row_idx)
+                    except Exception as e:
+                        print("parent_queue_retry send error:", e)
+                        parentqueue_bump_attempt(row_idx)
+                else:
+                    parentqueue_bump_attempt(row_idx)
+
+            time.sleep(3600*24)  # 24 hours
+        except Exception as e:
+            print("parent_queue_retry_worker error:", e)
+            time.sleep(3600*6)
+
+def weekly_summary_worker():
+    while True:
+        try:
+            now = datetime.now(ZoneInfo(TIMEZONE))
+            # Sunday ~09:00 window
+            if now.weekday() == 6 and now.hour == 9 and now.minute < 5:
+                last_week = _control_get("LastWeekly") or ""
+                this_key = now.strftime("%Y-%U")  # year-week key
+                if last_week != this_key:
+                    off_list = master_sheet.get_all_records()
+                    on_list = online_master_sheet.get_all_records() if online_master_sheet else []
+
+                    off_total = len(off_list)
+                    on_total = len(on_list)
+                    off_linked = sum(1 for r in off_list if str(r.get("ParentChatId","")).strip())
+                    on_linked  = sum(1 for r in on_list if str(r.get("ParentChatId","")).strip())
+
+                    msg = TPL_FACULTY_WEEKLY.format(
+                        off_linked=off_linked, off_total=off_total,
+                        on_linked=on_linked, on_total=on_total
+                    )
+                    if TEACHER_ID:
+                        safe_send_chat(TEACHER_ID, msg)
+
+                    # publish Top3 on Sunday too
+                    try:
+                        publish_top3_to_teacher_and_topic()
+                    except Exception as e:
+                        print("Weekly -> Top3 publish error:", e)
+
+                    _control_set("LastWeekly", this_key)
+            time.sleep(300)
+        except Exception as e:
+            print("Weekly summary error:", e)
+            time.sleep(600)
+
+threading.Thread(target=auto_eod_worker, daemon=True).start()
+threading.Thread(target=parent_queue_retry_worker, daemon=True).start()
+threading.Thread(target=weekly_summary_worker, daemon=True).start()
+threading.Thread(target=biweekly_worker, daemon=True).start()
+threading.Thread(target=monthly_worker, daemon=True).start()
+
+
+def daily_motivation_worker():
+    """
+    Runs once per day, sends DAILY_MSG to all students via safe_send_chat.
+    Uses master/online master lists and updates streak via db.update_streak(student_id, daily=True).
+    """
+    import time
+    while True:
+        try:
+            now = datetime.now(ZoneInfo(TIMEZONE))
+            # Run at 20:00 local if minute==0 window (small window to avoid exact schedule dependency)
+            if now.hour == 20 and 0 <= now.minute < 2:
+                today_str = now.strftime("%b %d, %Y")
+                # offline students
+                for s in get_cached_master_list():
+                    try:
+                        chatid = str(s.get("Reg ID","")).strip()
+                        attendance_pct = s.get("AttendancePct", "") or ""  # optional field if you maintain it
+                        group_name = s.get("Group","")
+                        msg = DAILY_MSG.format(
+                            student_name=s.get("Name",""),
+                            attendance_pct=attendance_pct,
+                            group_name=group_name,
+                            date=today_str
+                        )
+                        safe_send_chat(chatid, msg)
+                        try: db.update_streak(chatid, daily=True)
+                        except Exception: pass
+                    except Exception:
+                        pass
+                # online students
+                for s in get_cached_online_master_list():
+                    try:
+                        chatid = str(s.get("Reg ID","")).strip()
+                        attendance_pct = s.get("AttendancePct", "") or ""
+                        group_name = s.get("Group","")
+                        msg = DAILY_MSG.format(
+                            student_name=s.get("Name",""),
+                            attendance_pct=attendance_pct,
+                            group_name=group_name,
+                            date=today_str
+                        )
+                        safe_send_chat(chatid, msg)
+                        try: db.update_streak(chatid, daily=True)
+                        except Exception: pass
+                    except Exception:
+                        pass
+                # sleep a minute so we don't double-run within window
+                time.sleep(60)
+            time.sleep(20)
+        except Exception as e:
+            print("daily_motivation_worker error:", e)
+            time.sleep(60)
+
+# start daily motivation worker alongside others
+threading.Thread(target=daily_motivation_worker, daemon=True).start()
+
 
