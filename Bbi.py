@@ -583,20 +583,11 @@ def weekly_summary_worker():
             time.sleep(600)
 
 
-# start background threads
-threading.Thread(target=auto_eod_worker, daemon=True).start()
-threading.Thread(target=parent_queue_retry_worker, daemon=True).start()
-threading.Thread(target=weekly_summary_worker, daemon=True).start()
-threading.Thread(target=biweekly_worker, daemon=True).start()
-threading.Thread(target=monthly_worker, daemon=True).start()
-
-
 def daily_motivation_worker():
     """
     Runs once per day, sends DAILY_MSG to all students via safe_send_chat.
     Uses master/online master lists and updates streak via db.update_streak(student_id, daily=True).
     """
-    import time
     while True:
         try:
             now = datetime.now(ZoneInfo(TIMEZONE))
@@ -649,5 +640,10 @@ def daily_motivation_worker():
             time.sleep(60)
 
 
-# start daily motivation worker
+# start background threads (after all worker functions are defined)
+threading.Thread(target=auto_eod_worker, daemon=True).start()
+threading.Thread(target=parent_queue_retry_worker, daemon=True).start()
+threading.Thread(target=weekly_summary_worker, daemon=True).start()
+threading.Thread(target=biweekly_worker, daemon=True).start()
+threading.Thread(target=monthly_worker, daemon=True).start()
 threading.Thread(target=daily_motivation_worker, daemon=True).start()
