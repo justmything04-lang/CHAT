@@ -1,0 +1,216 @@
+  Preparing metadata (pyproject.toml): finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  × Preparing metadata (pyproject.toml) did not run successfully.
+  │ exit code: 1
+  ╰─> [200 lines of output]
+      + meson setup /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584 /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/.mesonpy-oxowfdgm/build -Dbuildtype=release -Db_ndebug=if-release -Db_vscrt=md --vsenv --native-file=/tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/.mesonpy-oxowfdgm/build/meson-python-native-file.ini
+      The Meson build system
+      Version: 1.2.1
+      Source dir: /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584
+      Build dir: /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/.mesonpy-oxowfdgm/build
+      Build type: native build
+      Project name: pandas
+      Project version: 2.2.2
+      C compiler for the host machine: cc (gcc 12.2.0 "cc (Debian 12.2.0-14+deb12u1) 12.2.0")
+      C linker for the host machine: cc ld.bfd 2.40
+      C++ compiler for the host machine: c++ (gcc 12.2.0 "c++ (Debian 12.2.0-14+deb12u1) 12.2.0")
+      C++ linker for the host machine: c++ ld.bfd 2.40
+      Cython compiler for the host machine: cython (cython 3.0.5)
+      Host machine cpu family: x86_64
+      Host machine cpu: x86_64
+      Program python found: YES (/opt/render/project/src/.venv/bin/python3.13)
+      Found pkg-config: /usr/bin/pkg-config (1.8.1)
+      Run-time dependency python found: YES 3.13
+      Build targets in project: 53
+      
+      pandas 2.2.2
+      
+        User defined options
+          Native files: /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/.mesonpy-oxowfdgm/build/meson-python-native-file.ini
+          buildtype   : release
+          vsenv       : True
+          b_ndebug    : if-release
+          b_vscrt     : md
+      
+      Found ninja-1.11.1 at /usr/bin/ninja
+      
+      Visual Studio environment is needed to run Ninja. It is recommended to use Meson wrapper:
+      /tmp/pip-build-env-lh7p_w7p/overlay/bin/meson compile -C .
+      + /usr/bin/ninja
+      [1/151] Generating pandas/_libs/hashtable_class_helper_pxi with a custom command
+      [2/151] Generating pandas/_libs/intervaltree_helper_pxi with a custom command
+      [3/151] Generating pandas/_libs/algos_take_helper_pxi with a custom command
+      [4/151] Generating pandas/_libs/sparse_op_helper_pxi with a custom command
+      [5/151] Generating pandas/_libs/algos_common_helper_pxi with a custom command
+      [6/151] Generating pandas/_libs/index_class_helper_pxi with a custom command
+      [7/151] Generating pandas/_libs/khash_primitive_helper_pxi with a custom command
+      [8/151] Generating pandas/_libs/hashtable_func_helper_pxi with a custom command
+      [9/151] Generating pandas/__init__.py with a custom command
+      [10/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/base.pyx
+      [11/151] Compiling C object pandas/_libs/tslibs/parsing.cpython-313-x86_64-linux-gnu.so.p/.._src_parser_tokenizer.c.o
+      [12/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/ccalendar.pyx
+      [13/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/nattype.pyx
+      warning: /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/nattype.pyx:79:0: Global name __nat_unpickle matched from within class scope in contradiction to to Python 'class private name' rules. This may change in a future release.
+      warning: /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/nattype.pyx:79:0: Global name __nat_unpickle matched from within class scope in contradiction to to Python 'class private name' rules. This may change in a future release.
+      [14/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/np_datetime.pyx
+      [15/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/dtypes.pyx
+      [16/151] Compiling C object pandas/_libs/tslibs/base.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_base.pyx.c.o
+      [17/151] Linking target pandas/_libs/tslibs/base.cpython-313-x86_64-linux-gnu.so
+      [18/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/tzconversion.pyx
+      [19/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/timezones.pyx
+      [20/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/vectorized.pyx
+      [21/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/fields.pyx
+      [22/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/strptime.pyx
+      [23/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/conversion.pyx
+      [24/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/arrays.pyx
+      [25/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/parsing.pyx
+      [26/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/period.pyx
+      [27/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/offsets.pyx
+      [28/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/timestamps.pyx
+      [29/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslibs/timedeltas.pyx
+      [30/151] Compiling C object pandas/_libs/tslibs/ccalendar.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_ccalendar.pyx.c.o
+      [31/151] Linking target pandas/_libs/tslibs/ccalendar.cpython-313-x86_64-linux-gnu.so
+      [32/151] Compiling C object pandas/_libs/tslibs/np_datetime.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_np_datetime.pyx.c.o
+      [33/151] Linking target pandas/_libs/tslibs/np_datetime.cpython-313-x86_64-linux-gnu.so
+      [34/151] Compiling C object pandas/_libs/arrays.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_arrays.pyx.c.o
+      [35/151] Linking target pandas/_libs/arrays.cpython-313-x86_64-linux-gnu.so
+      [36/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/hashing.pyx
+      [37/151] Compiling C object pandas/_libs/tslibs/nattype.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_nattype.pyx.c.o
+      [38/151] Linking target pandas/_libs/tslibs/nattype.cpython-313-x86_64-linux-gnu.so
+      [39/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/indexing.pyx
+      [40/151] Compiling C object pandas/_libs/tslibs/vectorized.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_vectorized.pyx.c.o
+      [41/151] Linking target pandas/_libs/tslibs/vectorized.cpython-313-x86_64-linux-gnu.so
+      [42/151] Compiling C object pandas/_libs/tslibs/dtypes.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_dtypes.pyx.c.o
+      [43/151] Linking target pandas/_libs/tslibs/dtypes.cpython-313-x86_64-linux-gnu.so
+      [44/151] Compiling C object pandas/_libs/indexing.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_indexing.pyx.c.o
+      [45/151] Linking target pandas/_libs/indexing.cpython-313-x86_64-linux-gnu.so
+      [46/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/algos.pyx
+      [47/151] Compiling C object pandas/_libs/tslibs/conversion.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_conversion.pyx.c.o
+      [48/151] Compiling C object pandas/_libs/tslibs/timezones.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_timezones.pyx.c.o
+      [49/151] Linking target pandas/_libs/tslibs/conversion.cpython-313-x86_64-linux-gnu.so
+      [50/151] Linking target pandas/_libs/tslibs/timezones.cpython-313-x86_64-linux-gnu.so
+      [51/151] Compiling C object pandas/_libs/tslibs/tzconversion.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_tzconversion.pyx.c.o
+      [52/151] Linking target pandas/_libs/tslibs/tzconversion.cpython-313-x86_64-linux-gnu.so
+      [53/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/internals.pyx
+      [54/151] Compiling C object pandas/_libs/tslibs/fields.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_fields.pyx.c.o
+      [55/151] Compiling C object pandas/_libs/lib.cpython-313-x86_64-linux-gnu.so.p/src_parser_tokenizer.c.o
+      [56/151] Linking target pandas/_libs/tslibs/fields.cpython-313-x86_64-linux-gnu.so
+      [57/151] Compiling C object pandas/_libs/pandas_datetime.cpython-313-x86_64-linux-gnu.so.p/src_vendored_numpy_datetime_np_datetime.c.o
+      [58/151] Compiling C object pandas/_libs/pandas_datetime.cpython-313-x86_64-linux-gnu.so.p/src_datetime_date_conversions.c.o
+      [59/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/groupby.pyx
+      [60/151] Compiling C object pandas/_libs/pandas_datetime.cpython-313-x86_64-linux-gnu.so.p/src_vendored_numpy_datetime_np_datetime_strings.c.o
+      [61/151] Compiling C object pandas/_libs/pandas_datetime.cpython-313-x86_64-linux-gnu.so.p/src_datetime_pd_datetime.c.o
+      [62/151] Linking target pandas/_libs/pandas_datetime.cpython-313-x86_64-linux-gnu.so
+      [63/151] Compiling C object pandas/_libs/pandas_parser.cpython-313-x86_64-linux-gnu.so.p/src_parser_io.c.o
+      [64/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/index.pyx
+      [65/151] Compiling C object pandas/_libs/pandas_parser.cpython-313-x86_64-linux-gnu.so.p/src_parser_pd_parser.c.o
+      [66/151] Compiling C object pandas/_libs/pandas_parser.cpython-313-x86_64-linux-gnu.so.p/src_parser_tokenizer.c.o
+      [67/151] Linking target pandas/_libs/pandas_parser.cpython-313-x86_64-linux-gnu.so
+      [68/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/missing.pyx
+      [69/151] Compiling C object pandas/_libs/parsers.cpython-313-x86_64-linux-gnu.so.p/src_parser_tokenizer.c.o
+      [70/151] Compiling C object pandas/_libs/parsers.cpython-313-x86_64-linux-gnu.so.p/src_parser_io.c.o
+      [71/151] Compiling C object pandas/_libs/hashing.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_hashing.pyx.c.o
+      [72/151] Linking target pandas/_libs/hashing.cpython-313-x86_64-linux-gnu.so
+      [73/151] Compiling C object pandas/_libs/json.cpython-313-x86_64-linux-gnu.so.p/src_vendored_ujson_python_ujson.c.o
+      [74/151] Compiling C object pandas/_libs/json.cpython-313-x86_64-linux-gnu.so.p/src_vendored_ujson_python_JSONtoObj.c.o
+      [75/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/interval.pyx
+      [76/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/lib.pyx
+      [77/151] Compiling C object pandas/_libs/json.cpython-313-x86_64-linux-gnu.so.p/src_vendored_ujson_lib_ultrajsonenc.c.o
+      [78/151] Compiling C object pandas/_libs/json.cpython-313-x86_64-linux-gnu.so.p/src_vendored_ujson_lib_ultrajsondec.c.o
+      [79/151] Compiling C object pandas/_libs/json.cpython-313-x86_64-linux-gnu.so.p/src_vendored_ujson_python_objToJSON.c.o
+      [80/151] Compiling C object pandas/_libs/tslibs/strptime.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_strptime.pyx.c.o
+      [81/151] Linking target pandas/_libs/json.cpython-313-x86_64-linux-gnu.so
+      [82/151] Linking target pandas/_libs/tslibs/strptime.cpython-313-x86_64-linux-gnu.so
+      [83/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/join.pyx
+      [84/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/ops_dispatch.pyx
+      [85/151] Compiling C object pandas/_libs/tslibs/parsing.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_parsing.pyx.c.o
+      [86/151] Linking target pandas/_libs/tslibs/parsing.cpython-313-x86_64-linux-gnu.so
+      [87/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/properties.pyx
+      [88/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/parsers.pyx
+      [89/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/hashtable.pyx
+      [90/151] Compiling C object pandas/_libs/ops_dispatch.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_ops_dispatch.pyx.c.o
+      [91/151] Linking target pandas/_libs/ops_dispatch.cpython-313-x86_64-linux-gnu.so
+      [92/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/ops.pyx
+      [93/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/reshape.pyx
+      [94/151] Compiling C object pandas/_libs/tslibs/period.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_period.pyx.c.o
+      [95/151] Linking target pandas/_libs/tslibs/period.cpython-313-x86_64-linux-gnu.so
+      [96/151] Compiling C object pandas/_libs/properties.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_properties.pyx.c.o
+      [97/151] Linking target pandas/_libs/properties.cpython-313-x86_64-linux-gnu.so
+      [98/151] Compiling C object pandas/_libs/missing.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_missing.pyx.c.o
+      [99/151] Linking target pandas/_libs/missing.cpython-313-x86_64-linux-gnu.so
+      [100/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/byteswap.pyx
+      [101/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/sas.pyx
+      [102/151] Compiling C object pandas/_libs/tslibs/timestamps.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_timestamps.pyx.c.o
+      [103/151] Linking target pandas/_libs/tslibs/timestamps.cpython-313-x86_64-linux-gnu.so
+      [104/151] Compiling C object pandas/_libs/byteswap.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_byteswap.pyx.c.o
+      [105/151] Linking target pandas/_libs/byteswap.cpython-313-x86_64-linux-gnu.so
+      [106/151] Compiling C object pandas/_libs/tslibs/timedeltas.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_timedeltas.pyx.c.o
+      [107/151] Linking target pandas/_libs/tslibs/timedeltas.cpython-313-x86_64-linux-gnu.so
+      [108/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/tslib.pyx
+      [109/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/testing.pyx
+      [110/151] Compiling C object pandas/_libs/internals.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_internals.pyx.c.o
+      [111/151] Linking target pandas/_libs/internals.cpython-313-x86_64-linux-gnu.so
+      [112/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/writers.pyx
+      [113/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/sparse.pyx
+      [114/151] Compiling C object pandas/_libs/ops.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_ops.pyx.c.o
+      [115/151] Linking target pandas/_libs/ops.cpython-313-x86_64-linux-gnu.so
+      [116/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/window/indexers.pyx
+      [117/151] Compiling C object pandas/_libs/reshape.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_reshape.pyx.c.o
+      [118/151] Compiling Cython source /tmp/pip-install-l6a9n4ys/pandas_397ccc1c2c28462bbadfe31b7c32d584/pandas/_libs/window/aggregations.pyx
+      [119/151] Linking target pandas/_libs/reshape.cpython-313-x86_64-linux-gnu.so
+      [120/151] Compiling C object pandas/_libs/sas.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_sas.pyx.c.o
+      [121/151] Compiling C object pandas/_libs/testing.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_testing.pyx.c.o
+      [122/151] Linking target pandas/_libs/testing.cpython-313-x86_64-linux-gnu.so
+      [123/151] Linking target pandas/_libs/sas.cpython-313-x86_64-linux-gnu.so
+      [124/151] Compiling C++ object pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_window_aggregations.pyx.cpp.o
+      FAILED: pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_window_aggregations.pyx.cpp.o
+      c++ -Ipandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p -Ipandas/_libs/window -I../../pandas/_libs/window -I../../../../pip-build-env-lh7p_w7p/overlay/lib/python3.13/site-packages/numpy/_core/include -I../../pandas/_libs/include -I/opt/render/project/python/Python-3.13.4/include/python3.13 -fvisibility=hidden -fvisibility-inlines-hidden -fdiagnostics-color=always -DNDEBUG -D_FILE_OFFSET_BITS=64 -w -O3 -DNPY_NO_DEPRECATED_API=0 -DNPY_TARGET_VERSION=NPY_1_21_API_VERSION -fPIC -MD -MQ pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_window_aggregations.pyx.cpp.o -MF pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_window_aggregations.pyx.cpp.o.d -o pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_window_aggregations.pyx.cpp.o -c pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp
+      pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp:422:31: error: standard attributes in middle of decl-specifiers
+        422 |         #define CYTHON_UNUSED [[maybe_unused]]
+            |                               ^
+      pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp:2260:12: note: in expansion of macro ‘CYTHON_UNUSED’
+       2260 |     static CYTHON_UNUSED PyObject *__Pyx_KwargsAsDict_FASTCALL(PyObject *kwnames, PyObject *const *kwvalues);
+            |            ^~~~~~~~~~~~~
+      pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp:422:31: note: standard attributes must precede the decl-specifiers to apply to the declaration, or follow them to apply to the type
+        422 |         #define CYTHON_UNUSED [[maybe_unused]]
+            |                               ^
+      pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp:2260:12: note: in expansion of macro ‘CYTHON_UNUSED’
+       2260 |     static CYTHON_UNUSED PyObject *__Pyx_KwargsAsDict_FASTCALL(PyObject *kwnames, PyObject *const *kwvalues);
+            |            ^~~~~~~~~~~~~
+      pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp:422:31: error: standard attributes in middle of decl-specifiers
+        422 |         #define CYTHON_UNUSED [[maybe_unused]]
+            |                               ^
+      pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp:42115:8: note: in expansion of macro ‘CYTHON_UNUSED’
+      42115 | static CYTHON_UNUSED PyObject *__Pyx_KwargsAsDict_FASTCALL(PyObject *kwnames, PyObject *const *kwvalues) {
+            |        ^~~~~~~~~~~~~
+      pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp:422:31: note: standard attributes must precede the decl-specifiers to apply to the declaration, or follow them to apply to the type
+        422 |         #define CYTHON_UNUSED [[maybe_unused]]
+            |                               ^
+      pandas/_libs/window/aggregations.cpython-313-x86_64-linux-gnu.so.p/pandas/_libs/window/aggregations.pyx.cpp:42115:8: note: in expansion of macro ‘CYTHON_UNUSED’
+      42115 | static CYTHON_UNUSED PyObject *__Pyx_KwargsAsDict_FASTCALL(PyObject *kwnames, PyObject *const *kwvalues) {
+            |        ^~~~~~~~~~~~~
+      [125/151] Compiling C object pandas/_libs/window/indexers.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_window_indexers.pyx.c.o
+      [126/151] Compiling C object pandas/_libs/writers.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_writers.pyx.c.o
+      [127/151] Compiling C object pandas/_libs/tslib.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslib.pyx.c.o
+      [128/151] Compiling C object pandas/_libs/parsers.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_parsers.pyx.c.o
+      [129/151] Compiling C object pandas/_libs/index.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_index.pyx.c.o
+      [130/151] Compiling C object pandas/_libs/tslibs/offsets.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_tslibs_offsets.pyx.c.o
+      [131/151] Compiling C object pandas/_libs/lib.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_lib.pyx.c.o
+      [132/151] Compiling C object pandas/_libs/interval.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_interval.pyx.c.o
+      [133/151] Compiling C object pandas/_libs/sparse.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_sparse.pyx.c.o
+      [134/151] Compiling C object pandas/_libs/join.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_join.pyx.c.o
+      [135/151] Compiling C object pandas/_libs/algos.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_algos.pyx.c.o
+      [136/151] Compiling C object pandas/_libs/hashtable.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_hashtable.pyx.c.o
+      [137/151] Compiling C object pandas/_libs/groupby.cpython-313-x86_64-linux-gnu.so.p/meson-generated_pandas__libs_groupby.pyx.c.o
+      ninja: build stopped: subcommand failed.
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+error: metadata-generation-failed
+× Encountered error while generating package metadata.
+╰─> pandas
+note: This is an issue with the package mentioned above, not pip.
+hint: See above for details.
+==> Build failed 😞
+==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
