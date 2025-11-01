@@ -245,3 +245,42 @@ def publish_top3_to_teacher_and_topic():
 
     except Exception as e:
         print("publish_top3_to_teacher_and_topic error:", e)
+
+
+
+
+
+
+
+
+
+
+
+
+==> Running 'python 11111.py'
+  File "/opt/render/project/src/11111.py", line 2242
+    for student in get_cached_master_list():
+IndentationError: unexpected indent
+==> Exited with status 1
+
+    # Deny live/backup in Academy app for Low band
+    _enforce_low_in_app(low_ids, win_start, win_end)
+
+    print("✅ Bi-Weekly: topic posted, admin notified, sheet updated, parents cautioned, app lock attempted.")
+
+      for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Bi-Weekly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Bi-Weekly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        safe_send_chat(student["Reg ID"], msg_s)
+        if student.get("ParentChatId"):
+            safe_send_chat(student["ParentChatId"], msg_p)
+        db.update_streak(student["Reg ID"], boost=True)
+
