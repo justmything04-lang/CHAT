@@ -303,13 +303,14 @@ def _is_eod_done_for(today_str):
     """Returns True if today's offline+online absentee tabs already exist."""
     try:
         off_file = client.open_by_key(ABSENTEE_SHEET_ID)
-        on_file  = client.open_by_key(ONLINE_ABSENTEE_SHEET_ID)
+        on_file = client.open_by_key(ONLINE_ABSENTEE_SHEET_ID)
         off_done = any(ws.title == f"{today_str}-offline" for ws in off_file.worksheets())
-        on_done  = any(ws.title == f"{today_str}-online"  for ws in on_file.worksheets())
+        on_done = any(ws.title == f"{today_str}-online" for ws in on_file.worksheets())
         return off_done and on_done
     except Exception as e:
         print("_is_eod_done_for check failed:", e)
         return False
+
 
 def auto_eod_worker():
     """
@@ -322,7 +323,7 @@ def auto_eod_worker():
         try:
             s = get_cached_settings()
             end_str = s.get("EndTime", "23:59").strip()
-            today   = get_today_date()
+            today = get_today_date()
 
             # build today's localized end time
             try:
@@ -331,9 +332,9 @@ def auto_eod_worker():
             except Exception:
                 end_dt = datetime.now(ZoneInfo(TIMEZONE))
 
-            pre_trigger_dt  = end_dt - timedelta(minutes=5)
+            pre_trigger_dt = end_dt - timedelta(minutes=5)
             post_trigger_dt = end_dt + timedelta(hours=2)
-            now_local       = datetime.now(ZoneInfo(TIMEZONE))
+            now_local = datetime.now(ZoneInfo(TIMEZONE))
 
             # persistent guard: check if we already ran EOD today (control key)
             last_eod = _control_get("LastEOD") or ""
@@ -350,7 +351,6 @@ def auto_eod_worker():
 
             if pre_trigger_dt <= now_local < post_trigger_dt:
                 print("⏱️ Auto EOD (primary, -5 min) window…")
-                # run and mark
                 generate_eod_and_notify()
                 _control_set("LastEOD", today)
                 time.sleep(120)
@@ -382,7 +382,7 @@ def biweekly_worker():
     while True:
         try:
             now_local = datetime.now(ZoneInfo(TIMEZONE))
-            today     = now_local.date()
+            today = now_local.date()
 
             start = _get_class_start_date()
             win_start, win_end, is_boundary = _current_biweekly_window(today, start)
@@ -398,14 +398,14 @@ def biweekly_worker():
                 continue
 
             s = get_cached_settings()
-            end_str = s.get("EndTime","23:59").strip()
+            end_str = s.get("EndTime", "23:59").strip()
             try:
                 end_dt = datetime.strptime(str(today) + " " + end_str, "%Y-%m-%d %H:%M")
                 end_dt = end_dt.replace(tzinfo=ZoneInfo(TIMEZONE))
             except Exception:
                 end_dt = now_local
 
-            pre_trigger_dt  = end_dt - timedelta(minutes=5)
+            pre_trigger_dt = end_dt - timedelta(minutes=5)
             post_trigger_dt = end_dt + timedelta(hours=2)
 
             if pre_trigger_dt <= now_local < post_trigger_dt:
@@ -440,6 +440,7 @@ def biweekly_worker():
 def _is_last_day_of_month(d):
     return d.day == calendar.monthrange(d.year, d.month)[1]
 
+
 def monthly_worker():
     """
     Checks every 2 minutes.
@@ -449,15 +450,16 @@ def monthly_worker():
     while True:
         try:
             now_local = datetime.now(ZoneInfo(TIMEZONE))
-            today     = now_local.date()
+            today = now_local.date()
 
             start = _get_class_start_date()
             # compute 30-day windows:
             days = _days_since(start, today)
             if days < 0:
-                time.sleep(120); continue
+                time.sleep(120)
+                continue
             idx = days // 30
-            win_start = start + timedelta(days=30*idx)
+            win_start = start + timedelta(days=30 * idx)
             win_end = win_start + timedelta(days=29)  # 30-day window inclusive
             is_boundary = (today == win_end)
 
@@ -472,14 +474,14 @@ def monthly_worker():
                 continue
 
             s = get_cached_settings()
-            end_str = s.get("EndTime","23:59").strip()
+            end_str = s.get("EndTime", "23:59").strip()
             try:
                 end_dt = datetime.strptime(str(today) + " " + end_str, "%Y-%m-%d %H:%M")
                 end_dt = end_dt.replace(tzinfo=ZoneInfo(TIMEZONE))
             except Exception:
                 end_dt = now_local
 
-            pre_trigger_dt  = end_dt - timedelta(minutes=5)
+            pre_trigger_dt = end_dt - timedelta(minutes=5)
             post_trigger_dt = end_dt + timedelta(hours=2)
 
             if pre_trigger_dt <= now_local < post_trigger_dt:
@@ -516,19 +518,19 @@ def parent_queue_retry_worker():
         try:
             pending = parentqueue_list_pending()
             if not pending:
-                time.sleep(3600*6)  # sleep 6h if none
+                time.sleep(3600 * 6)  # sleep 6h if none
                 continue
 
             # For each pending, if parent linked now -> send
             for row_idx, r in pending:
-                reg_id = str(r.get("RegID","")).strip()
+                reg_id = str(r.get("RegID", "")).strip()
                 sheet, mode = find_sheet_for_reg(reg_id)
                 info = get_parent_info(sheet, reg_id) if sheet else {}
-                chatid = info.get("ParentChatId","").strip()
-                linked = info.get("ParentLinked","").strip().lower() == "yes"
+                chatid = info.get("ParentChatId", "").strip()
+                linked = info.get("ParentLinked", "").strip().lower() == "yes"
                 if chatid and linked:
                     try:
-                        safe_send_chat(chatid, r.get("Message",""))
+                        safe_send_chat(chatid, r.get("Message", ""))
                         parentqueue_mark_sent(row_idx)
                     except Exception as e:
                         print("parent_queue_retry send error:", e)
@@ -536,10 +538,11 @@ def parent_queue_retry_worker():
                 else:
                     parentqueue_bump_attempt(row_idx)
 
-            time.sleep(3600*24)  # 24 hours
+            time.sleep(3600 * 24)  # 24 hours
         except Exception as e:
             print("parent_queue_retry_worker error:", e)
-            time.sleep(3600*6)
+            time.sleep(3600 * 6)
+
 
 def weekly_summary_worker():
     while True:
@@ -555,12 +558,14 @@ def weekly_summary_worker():
 
                     off_total = len(off_list)
                     on_total = len(on_list)
-                    off_linked = sum(1 for r in off_list if str(r.get("ParentChatId","")).strip())
-                    on_linked  = sum(1 for r in on_list if str(r.get("ParentChatId","")).strip())
+                    off_linked = sum(1 for r in off_list if str(r.get("ParentChatId", "")).strip())
+                    on_linked = sum(1 for r in on_list if str(r.get("ParentChatId", "")).strip())
 
                     msg = TPL_FACULTY_WEEKLY.format(
-                        off_linked=off_linked, off_total=off_total,
-                        on_linked=on_linked, on_total=on_total
+                        off_linked=off_linked,
+                        off_total=off_total,
+                        on_linked=on_linked,
+                        on_total=on_total,
                     )
                     if TEACHER_ID:
                         safe_send_chat(TEACHER_ID, msg)
@@ -577,6 +582,8 @@ def weekly_summary_worker():
             print("Weekly summary error:", e)
             time.sleep(600)
 
+
+# start background threads
 threading.Thread(target=auto_eod_worker, daemon=True).start()
 threading.Thread(target=parent_queue_retry_worker, daemon=True).start()
 threading.Thread(target=weekly_summary_worker, daemon=True).start()
@@ -599,35 +606,39 @@ def daily_motivation_worker():
                 # offline students
                 for s in get_cached_master_list():
                     try:
-                        chatid = str(s.get("Reg ID","")).strip()
+                        chatid = str(s.get("Reg ID", "")).strip()
                         attendance_pct = s.get("AttendancePct", "") or ""  # optional field if you maintain it
-                        group_name = s.get("Group","")
+                        group_name = s.get("Group", "")
                         msg = DAILY_MSG.format(
-                            student_name=s.get("Name",""),
+                            student_name=s.get("Name", ""),
                             attendance_pct=attendance_pct,
                             group_name=group_name,
-                            date=today_str
+                            date=today_str,
                         )
                         safe_send_chat(chatid, msg)
-                        try: db.update_streak(chatid, daily=True)
-                        except Exception: pass
+                        try:
+                            db.update_streak(chatid, daily=True)
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                 # online students
                 for s in get_cached_online_master_list():
                     try:
-                        chatid = str(s.get("Reg ID","")).strip()
+                        chatid = str(s.get("Reg ID", "")).strip()
                         attendance_pct = s.get("AttendancePct", "") or ""
-                        group_name = s.get("Group","")
+                        group_name = s.get("Group", "")
                         msg = DAILY_MSG.format(
-                            student_name=s.get("Name",""),
+                            student_name=s.get("Name", ""),
                             attendance_pct=attendance_pct,
                             group_name=group_name,
-                            date=today_str
+                            date=today_str,
                         )
                         safe_send_chat(chatid, msg)
-                        try: db.update_streak(chatid, daily=True)
-                        except Exception: pass
+                        try:
+                            db.update_streak(chatid, daily=True)
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                 # sleep a minute so we don't double-run within window
@@ -637,7 +648,6 @@ def daily_motivation_worker():
             print("daily_motivation_worker error:", e)
             time.sleep(60)
 
-# start daily motivation worker alongside others
+
+# start daily motivation worker
 threading.Thread(target=daily_motivation_worker, daemon=True).start()
-
-
