@@ -483,3 +483,419 @@ def send_report(message):
     except Exception as e:
         safe_reply(message, f"⚠️ Error generating report: {e}")
         print("EOD error:", e)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ---------- Sheet-write queue + worker (safe, batched, rate-limited) ----------
+from collections import deque
+import time
+
+# Config (can be overridden in env)
+SHEET_WRITE_BATCH_SIZE = int(os.getenv("SHEET_WRITE_BATCH_SIZE", "50"))   # rows per append_rows call
+SHEET_WRITE_BATCH_DELAY = float(os.getenv("SHEET_WRITE_BATCH_DELAY", "1.0"))  # seconds between sheet API calls
+SHEET_WORKER_SLEEP = float(os.getenv("SHEET_WORKER_SLEEP", "0.5"))  # sleep between worker loop iterations
+
+_sheet_write_queue = deque()   # items: {"mode":"offline"|"online", "date": "YYYY-MM-DD"}
+_sheet_worker_running = False
+_sheet_worker_thread = None
+_sheet_worker_lock = threading.Lock()
+
+def enqueue_sheet_write(mode: str, date_str: str):
+    """Add a task to write absentees/<mode>/dates/<date> -> corresponding Google Sheet."""
+    _sheet_write_queue.append({"mode": mode, "date": str(date_str)})
+
+def _process_one_sheet_task(task):
+    """Read Firestore doc for task and write into the proper Google Sheet tab (batched)."""
+    mode = task.get("mode")
+    date_str = task.get("date")
+    try:
+        fs_db = firestore.client() if hasattr(firestore, "client") else None
+    except Exception:
+        fs_db = None
+
+    if not fs_db:
+        print("⚠️ Sheet-worker: Firestore client unavailable; skipping sheet write for", task)
+        return
+
+    # read absentee rows from Firestore
+    try:
+        doc_ref = fs_db.collection("absentees").document(mode).collection("dates").document(str(date_str))
+        doc = doc_ref.get()
+        if not doc.exists:
+            print(f"⚠️ Sheet-worker: no firestore doc for absentees/{mode}/dates/{date_str}")
+            rows = []
+        else:
+            data = doc.to_dict() or {}
+            rows = data.get("rows", [])  # expecting list of {"Name","Reg ID","Date"}
+    except Exception as e:
+        print("⚠️ Sheet-worker: error reading firestore doc:", e)
+        rows = []
+
+    # pick target sheet id and gspread file
+    sheet_id = ABSENTEE_SHEET_ID if mode == "offline" else ONLINE_ABSENTEE_SHEET_ID
+    if not sheet_id:
+        print(f"⚠️ Sheet-worker: no sheet id configured for mode={mode}")
+        return
+
+    # open target spreadsheet and ensure worksheet for date exists
+    try:
+        file = client.open_by_key(sheet_id)
+        ws_title = f"{date_str}-{mode}"
+        try:
+            ws = file.worksheet(ws_title)
+        except gspread.exceptions.WorksheetNotFound:
+            # create and set header
+            ws = file.add_worksheet(title=ws_title, rows="500", cols="3")
+            try:
+                ws.update("A1:C1", [["Name", "Reg ID", "Date"]])
+            except Exception:
+                pass
+        # clear previous data rows (A2:C)
+        try:
+            ws.batch_clear(["A2:C"])
+        except Exception:
+            pass
+    except Exception as e:
+        print("⚠️ Sheet-worker: failed to open / prepare spreadsheet:", e)
+        return
+
+    # if no rows, nothing to append; finish
+    if not rows:
+        print(f"Sheet-worker: no rows to write for {mode}/{date_str}")
+        return
+
+    # prepare rows (list of lists)
+    row_lists = []
+    for r in rows:
+        name = r.get("Name", "") if isinstance(r, dict) else (r[0] if len(r) > 0 else "")
+        rid = r.get("Reg ID", "") if isinstance(r, dict) else (r[1] if len(r) > 1 else "")
+        date_val = r.get("Date", "") if isinstance(r, dict) else (r[2] if len(r) > 2 else date_str)
+        row_lists.append([name, rid, date_val])
+
+    # Batch append with rate limiting
+    try:
+        idx = 0
+        total = len(row_lists)
+        while idx < total:
+            batch = row_lists[idx: idx + SHEET_WRITE_BATCH_SIZE]
+            try:
+                _gs_write(lambda: ws.append_rows(batch, value_input_option='USER_ENTERED'),
+                          desc=f"ws.append_rows({len(batch)} rows) for {ws.title}")
+            except Exception as e:
+                print("⚠️ Sheet-worker: append_rows failed:", e)
+                # If append failed, retry once after a short sleep; if still fails, log and break
+                time.sleep(SHEET_WRITE_BATCH_DELAY)
+                try:
+                    _gs_write(lambda: ws.append_rows(batch, value_input_option='USER_ENTERED'),
+                              desc=f"ws.append_rows(retry {len(batch)} rows) for {ws.title}")
+                except Exception as e2:
+                    print("⚠️ Sheet-worker: append_rows retry failed:", e2)
+                    break
+            idx += len(batch)
+            # throttle between batches
+            time.sleep(SHEET_WRITE_BATCH_DELAY)
+        print(f"Sheet-worker: wrote {total} rows to {ws.title}")
+    except Exception as e:
+        print("⚠️ Sheet-worker: unexpected error while batching:", e)
+
+def _sheet_worker_loop():
+    global _sheet_worker_running
+    _sheet_worker_running = True
+    try:
+        while True:
+            if _sheet_write_queue:
+                task = _sheet_write_queue.popleft()
+                _process_one_sheet_task(task)
+            else:
+                time.sleep(SHEET_WORKER_SLEEP)
+    except Exception as e:
+        print("⚠️ Sheet-worker crashed:", e)
+    finally:
+        _sheet_worker_running = False
+
+def start_sheet_worker_once():
+    """Start background sheet-writing worker thread if not already running."""
+    global _sheet_worker_thread, _sheet_worker_running
+    with _sheet_worker_lock:
+        if _sheet_worker_running:
+            return
+        try:
+            _sheet_worker_thread = threading.Thread(target=_sheet_worker_loop, daemon=True)
+            _sheet_worker_thread.start()
+            print("✅ Sheet-worker started (daemon thread).")
+        except Exception as e:
+            print("⚠️ Failed to start sheet-worker thread:", e)
+
+# ---------- Combined EOD (Firestore-first, then enqueue sheet writes) ----------
+def generate_eod_and_notify():
+    """EOD: writes absentee docs to Firestore first, then enqueues sheet writes from Firestore.
+       Keeps sheet-append to attendance_sheet and absent-streak logic unchanged.
+    """
+    # Ensure sheet worker is running
+    start_sheet_worker_once()
+
+    # Flush any pending attendance append queue rows first (same as your original)
+    with _queue_lock:
+        batch = []
+        while write_queue:
+            batch.append(write_queue.popleft())
+
+    if batch:
+        offline_rows = [r for mode, r in batch if mode == "offline"]
+        online_rows = [r for mode, r in batch if mode == "online"]
+
+        if offline_rows:
+            try:
+                _gs_write(lambda: attendance_sheet.append_rows(offline_rows, value_input_option='USER_ENTERED'),
+                          desc=f"attendance_sheet.append_rows({len(offline_rows)} rows)")
+                invalidate_cache("attendance_rows")
+            except Exception as e:
+                print("⚠️ EOD offline append_rows failed:", e)
+                # requeue if needed
+                with _queue_lock:
+                    for row in reversed([("offline", r) for r in offline_rows]):
+                        write_queue.appendleft(row)
+
+        if online_rows and online_attendance_sheet:
+            try:
+                _gs_write(lambda: online_attendance_sheet.append_rows(online_rows, value_input_option='USER_ENTERED'),
+                          desc=f"online_attendance_sheet.append_rows({len(online_rows)} rows)")
+                invalidate_cache("online_attendance_rows")
+            except Exception as e:
+                print("⚠️ EOD online append_rows failed:", e)
+                with _queue_lock:
+                    for row in reversed([("online", r) for r in online_rows]):
+                        write_queue.appendleft(row)
+
+    today = get_today_date()
+
+    # Firestore client
+    try:
+        fs_db = firestore.client() if hasattr(firestore, "client") else None
+    except Exception:
+        fs_db = None
+
+    # --- compute offline absentees (from cached attendance rows + master) ---
+    attendance_rows = get_cached_attendance_rows()
+    present_ids = {str(r.get("Reg ID", "")).strip() for r in attendance_rows}
+    all_students = get_cached_master_list()
+    absentees = [s for s in all_students if str(s.get("Reg ID", "")).strip() not in present_ids]
+
+    # 1) write absentees to Firestore first
+    try:
+        if fs_db is not None:
+            if absentees:
+                abs_data = [{"Name": s.get("Name", ""), "Reg ID": s.get("Reg ID", ""), "Date": str(today)} for s in absentees]
+            else:
+                abs_data = []
+            # overwrite / set document for this date
+            fs_db.collection("absentees").document("offline").collection("dates").document(str(today)).set(
+                {"rows": abs_data, "created_at": now_ts()})
+    except Exception as e:
+        print("⚠️ Failed to write offline absentee doc to Firestore:", e)
+
+    # AbsentStreak updates (unchanged, but uses sheet master updates)
+    try:
+        col_map = ensure_columns(master_sheet, ["AbsentStreak"])
+        streak_col = col_map.get("AbsentStreak")
+    except Exception:
+        streak_col = None
+
+    STREAK_THRESHOLDS = {1,2,3,5,10}
+    try:
+        if streak_col:
+            for student_row in get_cached_master_list():
+                rid = str(student_row.get("Reg ID","")).strip()
+                row_idx = find_row_index_by_reg(master_sheet, rid)
+                if not row_idx:
+                    continue
+                try:
+                    cur_val = master_sheet.cell(row_idx, streak_col).value
+                    cur = int(cur_val) if cur_val and str(cur_val).isdigit() else 0
+                except Exception:
+                    cur = 0
+
+                if rid not in present_ids:
+                    new_streak = cur + 1
+                    try:
+                        master_sheet.update_cell(row_idx, streak_col, str(new_streak))
+                    except Exception:
+                        pass
+                    if new_streak in STREAK_THRESHOLDS:
+                        tpl = os.getenv(f"ABSENCE_{new_streak}_MSG") or os.getenv("ABSENCE_ALERT_MSG") or "⚠️ {student_name} missed {streak} classes (dates: {dates})."
+                        dates = ", ".join([str(today)]) or str(today)
+                        try:
+                            msg = tpl.format(student_name=student_row.get("Name",""), reg_id=rid, streak=new_streak, dates=dates)
+                            info = get_parent_info(master_sheet, rid)
+                            chatid = info.get("ParentChatId","").strip()
+                            linked = info.get("ParentLinked","").strip().lower() == "yes"
+                            if chatid and linked:
+                                safe_send_chat(chatid, msg)
+                            else:
+                                parentqueue_enqueue(rid, str(today), "offline", msg)
+                        except Exception:
+                            pass
+                else:
+                    if cur != 0:
+                        try:
+                            master_sheet.update_cell(row_idx, streak_col, "0")
+                        except Exception:
+                            pass
+    except Exception as e:
+        print("⚠️ AbsentStreak offline update error:", e)
+
+    # notify parents (offline)
+    for s in absentees:
+        notify_parent_telegram(str(s.get("Reg ID","")), s.get("Name",""), today, "offline")
+
+    # --- online absentees ---
+    online_rows = get_cached_online_attendance_rows()
+    present_online_ids = {str(r.get("Reg ID", "")).strip() for r in online_rows}
+    all_online_students = get_cached_online_master_list()
+    absentees_online = [s for s in all_online_students if str(s.get("Reg ID", "")).strip() not in present_online_ids]
+
+    # 1) write online absentees to Firestore
+    try:
+        if fs_db is not None:
+            if absentees_online:
+                abs_data_online = [{"Name": s.get("Name", ""), "Reg ID": s.get("Reg ID", ""), "Date": str(today)} for s in absentees_online]
+            else:
+                abs_data_online = []
+            fs_db.collection("absentees").document("online").collection("dates").document(str(today)).set(
+                {"rows": abs_data_online, "created_at": now_ts()})
+    except Exception as e:
+        print("⚠️ Failed to write online absentee doc to Firestore:", e)
+
+    # AbsentStreak online (unchanged)
+    target_master = online_master_sheet or master_sheet
+    try:
+        if target_master:
+            col_map_on = ensure_columns(target_master, ["AbsentStreak"])
+            streak_col_on = col_map_on.get("AbsentStreak")
+        else:
+            streak_col_on = None
+    except Exception:
+        streak_col_on = None
+
+    try:
+        if streak_col_on and target_master:
+            for student_row in get_cached_online_master_list():
+                rid = str(student_row.get("Reg ID","")).strip()
+                row_idx = find_row_index_by_reg(target_master, rid)
+                if not row_idx:
+                    continue
+                try:
+                    cur_val = target_master.cell(row_idx, streak_col_on).value
+                    cur = int(cur_val) if cur_val and str(cur_val).isdigit() else 0
+                except Exception:
+                    cur = 0
+
+                if rid not in present_online_ids:
+                    new_streak = cur + 1
+                    try:
+                        target_master.update_cell(row_idx, streak_col_on, str(new_streak))
+                    except Exception:
+                        pass
+                    if new_streak in STREAK_THRESHOLDS:
+                        tpl = os.getenv(f"ABSENCE_{new_streak}_MSG") or os.getenv("ABSENCE_ALERT_MSG") or "⚠️ {student_name} missed {streak} classes (dates: {dates})."
+                        dates = ", ".join([str(today)]) or str(today)
+                        try:
+                            msg = tpl.format(student_name=student_row.get("Name",""), reg_id=rid, streak=new_streak, dates=dates)
+                            info = get_parent_info(target_master, rid)
+                            chatid = info.get("ParentChatId","").strip()
+                            linked = info.get("ParentLinked","").strip().lower() == "yes"
+                            if chatid and linked:
+                                safe_send_chat(chatid, msg)
+                            else:
+                                parentqueue_enqueue(rid, str(today), "online", msg)
+                        except Exception:
+                            pass
+                else:
+                    if cur != 0:
+                        try:
+                            target_master.update_cell(row_idx, streak_col_on, "0")
+                        except Exception:
+                            pass
+    except Exception as e:
+        print("⚠️ AbsentStreak online update error:", e)
+
+    # notify parents (online)
+    for s in absentees_online:
+        notify_parent_telegram(str(s.get("Reg ID","")), s.get("Name",""), today, "online")
+
+    # build public summary
+    off_abs = len(absentees)
+    on_abs = len(absentees_online)
+    off_present = len(present_ids)
+    on_present = len(present_online_ids)
+
+    public = (
+        f"📊 Attendance Report for {today}\n\n"
+        f"📍 Offline: ✅ {off_present} / ❌ {off_abs}\n"
+        f"🌐 Online:  ✅ {on_present} / ❌ {on_abs}"
+    )
+    _post_public(public)
+
+    # mark EOD in Firestore control collection
+    try:
+        if fs_db is not None:
+            fs_db.collection("control").document("eod").set({str(today): now_ts()}, merge=True)
+    except Exception:
+        pass
+
+    # --- enqueue sheet writes (read from Firestore and write to sheets in background) ---
+    try:
+        enqueue_sheet_write("offline", str(today))
+        enqueue_sheet_write("online", str(today))
+    except Exception as e:
+        print("⚠️ Failed to enqueue sheet write tasks:", e)
+
+    return off_abs, on_abs, off_present, on_present
+
+
+@bot.message_handler(commands=['eod'])
+def send_report(message):
+    if str(message.from_user.id) != str(TEACHER_ID):
+        safe_reply(message, "❌ Unauthorized.")
+        return
+    try:
+        off_abs, on_abs, off_present, on_present = generate_eod_and_notify()
+        today = get_today_date()
+
+        # Only show Google Sheet links (not Firestore links)
+        offline_link = f"https://docs.google.com/spreadsheets/d/{ABSENTEE_SHEET_ID}/edit#gid=0" if ABSENTEE_SHEET_ID else None
+        online_link = f"https://docs.google.com/spreadsheets/d/{ONLINE_ABSENTEE_SHEET_ID}/edit#gid=0" if ONLINE_ABSENTEE_SHEET_ID else None
+
+        report = (
+            f"📊 Attendance Report for {today}\n\n"
+            f"📍 Offline: ✅ {off_present} / ❌ {off_abs}\n"
+            f"🌐 Online:  ✅ {on_present} / ❌ {on_abs}"
+        )
+
+        parts = [report, ""]
+        if offline_link:
+            parts.append(f"📄 Offline Absentees: {offline_link}")
+        else:
+            parts.append("📄 Offline Absentees: (sheet unavailable)")
+
+        if online_link:
+            parts.append(f"🌐 Online Absentees: {online_link}")
+        else:
+            parts.append("🌐 Online Absentees: (sheet unavailable)")
+
+        safe_reply(message, "\n".join(parts))
+        print(f"EOD generated for {today}. offline_absent={off_abs}, online_absent={on_abs}")
+    except Exception as e:
+        safe_reply(message, f"⚠️ Error generating report: {e}")
+        print("EOD error:", e)
