@@ -2789,3 +2789,405 @@ def send_course_summary_report():
 
 
 
+
+
+
+
+
+
+
+
+new 
+
+
+
+# ---------------- Monthly & Course helpers (combined Firestore + Sheets) ----------------
+
+def _make_unique_title_for_wb(wb, base_title):
+    """Same behaviour as your original _make_unique_title but safe if wb access fails."""
+    try:
+        titles = [ws.title for ws in wb.worksheets()]
+    except Exception:
+        titles = []
+    if base_title not in titles:
+        return base_title
+    suffix = datetime.now(ZoneInfo(TIMEZONE)).strftime("%H%M%S")
+    return f"{base_title} {suffix}"
+
+
+def _write_monthly_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Try to create a NEW tab in the main SHEET workbook and return (tab_gid, tab_title).
+    If Sheets operations fail for any reason (API errors/429/etc.) -> fallback to writing report to Firestore
+    using the existing _fs_write_report() and return (firestore_doc_id, firestore_title) to caller.
+    Uses your _gs_write wrapper for safe write attempts.
+    """
+    try:
+        wb = client.open_by_key(SHEET_ID)
+    except Exception as e:
+        print("⚠️ Cannot open workbook for monthly sheet:", e)
+        # fallback to Firestore write
+        return _write_monthly_sheet_fallback_to_fs(win_start, win_end, off_rows, on_rows)
+
+    base_title = f"MON {win_start.strftime('%Y-%m')}"
+    tab_title = _make_unique_title_for_wb(wb, base_title)
+    try:
+        ws = wb.add_worksheet(title=tab_title, rows="4000", cols="10")
+        # header
+        _gs_write(lambda: ws.update("A1:J1", [[
+            "Mode","RegID","Name","Present","Absent","Percent","Band",
+            "WindowStart","WindowEnd","CreatedAt"
+        ]]), desc=f"monthly:{tab_title}:header")
+        if set_frozen:
+            try:
+                set_frozen(ws, rows=1)
+            except Exception:
+                pass
+
+        off_sorted = _sorted_by_band(off_rows)
+        on_sorted  = _sorted_by_band(on_rows)
+
+        def _fmt(mode, r):
+            rid, name, pres, absd, pct, band = r
+            return [mode, rid, name, pres, absd, round(pct*100,1), band, str(win_start), str(win_end), now_ts()]
+
+        rows_to_write = [_fmt("Offline", r) for r in off_sorted] + [_fmt("Online", r) for r in on_sorted]
+
+        if rows_to_write:
+            # append rows via the safe wrapper to handle throttling
+            _gs_write(lambda: ws.append_rows(rows_to_write, value_input_option='USER_ENTERED'),
+                      desc=f"monthly:{tab_title}:append({len(rows_to_write)})")
+
+        # optional colours (guarded)
+        if format_cell_ranges and Color and CellFormat and rows_to_write:
+            try:
+                vals = ws.get_all_records()
+                colors = {
+                    "Low":     Color(1, 0.8, 0.8),
+                    "Average": Color(1, 1, 0.8),
+                    "High":    Color(0.85, 1, 0.85),
+                    "100%":    Color(0.85, 0.90, 1)
+                }
+                fmt_cache = {k: CellFormat(backgroundColor=v, textFormat=TextFormat(bold=False)) for k, v in colors.items()}
+                for i, rec in enumerate(vals, start=2):
+                    band = rec.get("Band","")
+                    if band in fmt_cache:
+                        try:
+                            format_cell_ranges(ws, [(f"A{i}:J{i}", fmt_cache[band])])
+                        except Exception:
+                            pass
+            except Exception as e:
+                print("Colouring skipped for monthly:", e)
+
+        try:
+            gid = getattr(ws, "id", None) or ws._properties.get("sheetId")  # gspread compatibility
+        except Exception:
+            gid = None
+
+        return gid, tab_title
+
+    except Exception as e:
+        print("⚠️ Monthly sheet create/write error, falling back to Firestore:", e)
+        return _write_monthly_sheet_fallback_to_fs(win_start, win_end, off_rows, on_rows)
+
+
+def _write_monthly_sheet_fallback_to_fs(win_start, win_end, off_rows, on_rows):
+    """Constructs Firestore style report and writes it via _fs_write_report (preserves existing behaviour)."""
+    base_title = f"MON {win_start.strftime('%Y-%m')}"
+    title = _make_unique_report_title(base_title, "monthly")
+    rows = []
+    for r in _sorted_by_band(off_rows):
+        rid, name, pres, absd, pct, band = r
+        rows.append({
+            "mode": "Offline",
+            "regid": rid,
+            "name": name,
+            "present": pres,
+            "absent": absd,
+            "percent": round(pct*100,1),
+            "band": band,
+            "window_start": str(win_start),
+            "window_end": str(win_end),
+            "created_at": now_ts()
+        })
+    for r in _sorted_by_band(on_rows):
+        rid, name, pres, absd, pct, band = r
+        rows.append({
+            "mode": "Online",
+            "regid": rid,
+            "name": name,
+            "present": pres,
+            "absent": absd,
+            "percent": round(pct*100,1),
+            "band": band,
+            "window_start": str(win_start),
+            "window_end": str(win_end),
+            "created_at": now_ts()
+        })
+    payload = {
+        "title": title,
+        "window_start": str(win_start),
+        "window_end": str(win_end),
+        "rows": rows
+    }
+    ok = _fs_write_report("monthly", "monthly", title, payload)
+    if ok:
+        return title, title
+    return None, None
+
+
+def _write_course_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Try to create a COURSE tab in the Sheets workbook. If Sheets fail, fallback to Firestore.
+    Returns (tab_gid, tab_title) or (firestore_id, firestore_title) on fallback.
+    """
+    try:
+        wb = client.open_by_key(SHEET_ID)
+    except Exception as e:
+        print("⚠️ Cannot open workbook for course sheet:", e)
+        return _write_course_sheet_fallback_to_fs(win_start, win_end, off_rows, on_rows)
+
+    base_title = f"COURSE {win_start} to {win_end}"
+    tab_title = _make_unique_title_for_wb(wb, base_title)
+    try:
+        ws = wb.add_worksheet(title=tab_title, rows="6000", cols="10")
+        _gs_write(lambda: ws.update("A1:J1", [[
+            "Mode","RegID","Name","Present","Absent","Percent","Band",
+            "WindowStart","WindowEnd","CreatedAt"
+        ]]), desc=f"course:{tab_title}:header")
+        if set_frozen:
+            try: set_frozen(ws, rows=1)
+            except Exception: pass
+
+        off_sorted = _sorted_by_band(off_rows)
+        on_sorted  = _sorted_by_band(on_rows)
+
+        def _fmt(mode, r):
+            rid,name,pres,absd,pct,band = r
+            return [mode,rid,name,pres,absd,round(pct*100,1),
+                    band,str(win_start),str(win_end),now_ts()]
+
+        rows_to_write = [_fmt("Offline",r) for r in off_sorted] + [_fmt("Online",r) for r in on_sorted]
+        if rows_to_write:
+            _gs_write(lambda: ws.append_rows(rows_to_write, value_input_option='USER_ENTERED'),
+                      desc=f"course:{tab_title}:append({len(rows_to_write)})")
+
+        # colouring (optional)
+        if format_cell_ranges and Color and CellFormat and rows_to_write:
+            try:
+                vals = ws.get_all_records()
+                colors = {
+                    "Low":Color(1,0.8,0.8),
+                    "Average":Color(1,1,0.8),
+                    "High":Color(0.85,1,0.85),
+                    "100%":Color(0.85,0.9,1)
+                }
+                fmts={k:CellFormat(backgroundColor=v, textFormat=TextFormat(bold=False)) for k,v in colors.items()}
+                for i,rec in enumerate(vals,start=2):
+                    band=rec.get("Band","")
+                    if band in fmts:
+                        try: format_cell_ranges(ws,[(f"A{i}:J{i}",fmts[band])])
+                        except Exception: pass
+            except Exception as e:
+                print("Colouring skipped for course summary:",e)
+
+        try:
+            gid = getattr(ws, "id", None) or ws._properties.get("sheetId")
+        except Exception:
+            gid = None
+
+        return gid, tab_title
+
+    except Exception as e:
+        print("⚠️ Course sheet create/write error, falling back to Firestore:", e)
+        return _write_course_sheet_fallback_to_fs(win_start, win_end, off_rows, on_rows)
+
+
+def _write_course_sheet_fallback_to_fs(win_start, win_end, off_rows, on_rows):
+    base_title = f"COURSE {win_start} to {win_end}"
+    title = _make_unique_report_title(base_title, "course")
+    rows = []
+    for r in _sorted_by_band(off_rows):
+        rid,name,pres,absd,pct,band = r
+        rows.append({
+            "mode":"Offline","regid":rid,"name":name,"present":pres,"absent":absd,
+            "percent":round(pct*100,1),"band":band,"window_start":str(win_start),
+            "window_end":str(win_end),"created_at":now_ts()
+        })
+    for r in _sorted_by_band(on_rows):
+        rid,name,pres,absd,pct,band = r
+        rows.append({
+            "mode":"Online","regid":rid,"name":name,"present":pres,"absent":absd,
+            "percent":round(pct*100,1),"band":band,"window_start":str(win_start),
+            "window_end":str(win_end),"created_at":now_ts()
+        })
+    payload = {"title": title, "window_start": str(win_start), "window_end": str(win_end), "rows": rows}
+    ok = _fs_write_report("course", "course", title, payload)
+    if ok:
+        return title, title
+    return None, None
+
+
+# ---------------- Reports (senders) ----------------
+
+def send_monthly_report():
+    """
+    Auto/manual monthly report: tries to create a sheet tab and DM teacher/admin with the sheet link (exact gid).
+    Falls back to Firestore-only report if sheets fail.
+    """
+    now_local = datetime.now(ZoneInfo(TIMEZONE)).date()
+    m_first, m_last = _month_window_for(now_local)
+    # if run mid-month manually, use first..today to avoid empty future days
+    win_end = m_last if now_local == m_last else now_local
+    win_start = m_first
+    risk_threshold = float(os.getenv("RISK_THRESHOLD","0.50"))
+
+    # collect
+    off_students = get_cached_master_list()
+    on_students  = get_cached_online_master_list()
+    off_absmap, off_classes, off_absdates = _collect_absences_between(None, "-offline", off_students, win_start, win_end)
+    on_absmap,  on_classes,  on_absdates  = _collect_absences_between(None, "-online",  on_students,  win_start, win_end)
+
+    # detail rows + bands
+    off_block, off_detailed, _ = _build_mode_summary("Offline", off_students, off_absmap, off_classes)
+    on_block,  on_detailed,  _ = _build_mode_summary("Online",  on_students,  on_absmap,  on_classes)
+
+    # Risk Watch (≤50%)
+    def _riskify(rows):
+        out = []
+        for rid, name, pres, absd, pct, band in rows:
+            if pct <= risk_threshold:
+                out.append((rid, name, pres, absd, pct, band))
+        return out
+    risk_off = _riskify(off_detailed)
+    risk_on  = _riskify(on_detailed)
+    risk_total = len(risk_off) + len(risk_on)
+
+    # Try to write to SHEETS (preferred). If it fails, the called writer returns Firestore fallback id/title.
+    tab_gid, tab_title = _write_monthly_sheet(win_start, win_end, off_detailed, on_detailed)
+    if tab_gid:
+        # Build direct tab URL (exact gid)
+        try:
+            sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
+        except Exception:
+            sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
+    else:
+        sheet_link = f"firestore://reports/monthly/{tab_title}" if tab_title else "reports:monthly (check Firestore)"
+
+    # messages
+    title = f"📅 Monthly Summary: {win_start} – {win_end}"
+    public_msg = f"{title}\n\n{off_block}\n\n{on_block}\n\n🚩 Risk Watch (≤{int(risk_threshold*100)}%): {risk_total}"
+    _post_public(public_msg)
+
+    admin_msg = public_msg + f"\n\n📄 Tab: {tab_title}\n🔗 {sheet_link}"
+    if TEACHER_ID: safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:   safe_send_chat(ADMIN_ID,   admin_msg)
+
+    window_label = f"Monthly {win_start}–{win_end}"
+    _send_parent_risk_alerts(risk_off, off_absdates, window_label)
+    _send_parent_risk_alerts(risk_on,  on_absdates,  window_label)
+
+    _enforce_low_in_app({rid for rid, *_ in (risk_off + risk_on)}, win_start, win_end)
+
+    for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Monthly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Monthly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        safe_send_chat(student["Reg ID"], msg_s)
+        if student.get("ParentChatId"):
+            safe_send_chat(student["ParentChatId"], msg_p)
+        try:
+            db.update_streak(student["Reg ID"], boost=True)
+        except Exception:
+            pass
+
+    try:
+        publish_top3_to_teacher_and_topic()
+    except Exception as e:
+        print("Monthly -> Top3 publish error (send_monthly_report):",e)
+        if ADMIN_ID:
+            safe_send_chat(ADMIN_ID, f"⚠️ Monthly Top3 publish failed: {e}")
+
+    print("✅ Monthly report done.")
+
+
+def send_course_summary_report():
+    """
+    Full-course window: from class start till today. Writes sheet tab if possible, otherwise Firestore.
+    DMs teacher/admin with the proper link (sheet gid or firestore fallback).
+    """
+    today = datetime.now(ZoneInfo(TIMEZONE)).date()
+    start = _get_class_start_date()
+    win_start, win_end = start, today
+    risk_threshold = float(os.getenv("RISK_THRESHOLD","0.50"))
+
+    off_students = get_cached_master_list()
+    on_students  = get_cached_online_master_list()
+    off_absmap, off_classes, off_absdates = _collect_absences_between(None, "-offline", off_students, win_start, win_end)
+    on_absmap,  on_classes,  on_absdates  = _collect_absences_between(None, "-online",  on_students,  win_start, win_end)
+
+    off_block, off_detailed, _ = _build_mode_summary("Offline", off_students, off_absmap, off_classes)
+    on_block,  on_detailed,  _ = _build_mode_summary("Online",  on_students,  on_absmap,  on_classes)
+
+    def _riskify(rows):
+        return [t for t in rows if t[4] <= risk_threshold]
+    risk_off = _riskify(off_detailed)
+    risk_on  = _riskify(on_detailed)
+    risk_total = len(risk_off) + len(risk_on)
+
+    tab_gid, tab_title = _write_course_sheet(win_start, win_end, off_detailed, on_detailed)
+    if tab_gid:
+        sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
+    else:
+        sheet_link = f"firestore://reports/course/{tab_title}" if tab_title else "reports:course (check Firestore)"
+
+    title = f"📘 Course Summary: {win_start} – {win_end}"
+    public_msg = f"{title}\n\n{off_block}\n\n{on_block}\n\n🚩 Risk Watch (≤{int(risk_threshold*100)}%): {risk_total}"
+    _post_public(public_msg)
+
+    admin_msg = public_msg + f"\n\n📄 Tab: {tab_title}\n🔗 {sheet_link}"
+    if TEACHER_ID: safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:   safe_send_chat(ADMIN_ID,   admin_msg)
+
+    window_label = f"Course {win_start}–{win_end}"
+    _send_parent_risk_alerts(risk_off, off_absdates, window_label)
+    _send_parent_risk_alerts(risk_on,  on_absdates,  window_label)
+
+    _enforce_low_in_app({rid for rid, *_ in (risk_off + risk_on)}, win_start, win_end)
+
+    for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Course Summary",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Course Summary",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        safe_send_chat(student["Reg ID"], msg_s)
+        if student.get("ParentChatId"):
+            safe_send_chat(student["ParentChatId"], msg_p)
+        try:
+            db.update_streak(student["Reg ID"], boost=True)
+        except Exception:
+            pass
+
+    try:
+        publish_top3_to_teacher_and_topic()
+    except Exception as e:
+        print("Course Summary -> Top3 publish error:", e)
+
+    print("✅ Course summary done.")
+
+
+
+
