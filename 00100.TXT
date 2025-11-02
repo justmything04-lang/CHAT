@@ -899,3 +899,758 @@ def send_report(message):
     except Exception as e:
         safe_reply(message, f"⚠️ Error generating report: {e}")
         print("EOD error:", e)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+this is my biweekly in normal version \
+
+# ---------------- Bi-Weekly helpers (public topic + admin sheet + parent caution + app lock) ----------------
+
+def _safe_parse_date(s):
+    if not s:
+        return None
+    # prefer dateutil if available
+    if _dateparse:
+        try:
+            return _dateparse(str(s)).date()
+        except Exception:
+            pass
+    try:
+        return datetime.strptime(str(s), "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+def _get_class_start_date():
+    # Prefer Settings!D2 if present; else infer earliest absentee tab date; else today
+    try:
+        val = settings_sheet.acell("D2").value
+        dt = _safe_parse_date(val)
+        if dt:
+            return dt
+    except Exception:
+        pass
+    dates = []
+    try:
+        off_file = client.open_by_key(ABSENTEE_SHEET_ID)
+        for ws in off_file.worksheets():
+            t = ws.title
+            if t.endswith("-offline"):
+                d = _safe_parse_date(t.replace("-offline",""))
+                if d: dates.append(d)
+    except Exception:
+        pass
+    try:
+        on_file = client.open_by_key(ONLINE_ABSENTEE_SHEET_ID)
+        for ws in on_file.worksheets():
+            t = ws.title
+            if t.endswith("-online"):
+                d = _safe_parse_date(t.replace("-online",""))
+                if d: dates.append(d)
+    except Exception:
+        pass
+    return min(dates) if dates else datetime.now(ZoneInfo(TIMEZONE)).date()
+
+def _days_since(start_date, today_date):
+    return (today_date - start_date).days
+
+def _current_biweekly_window(today_date, start_date):
+    """
+    Window length = 14 days. Returns (win_start, win_end, is_boundary_today).
+    Cycle n: [start+14n, start+14n+13]; boundary day is win_end.
+    """
+    days = _days_since(start_date, today_date)
+    if days < 0:
+        return (today_date, today_date, False)
+    idx = days // 14
+    win_start = start_date + timedelta(days=14*idx)
+    win_end   = win_start + timedelta(days=13)
+    return (win_start, win_end, today_date == win_end)
+
+def _collect_absences_between_with_dates(sheet_key, suffix, student_rows, win_start, win_end):
+    """
+    Reads absentee tabs 'YYYY-MM-DD-<suffix>' within [win_start..win_end].
+    Returns: abs_map {rid: absent_days}, classes count, abs_dates {rid: [YYYY-MM-DD,...]}
+    """
+    try:
+        f = client.open_by_key(sheet_key)
+        tabs = f.worksheets()
+    except Exception:
+        tabs = []
+
+    day_tabs = []
+    for ws in tabs:
+        t = ws.title
+        if not t.endswith(suffix):
+            continue
+        ds = t[:-len(suffix)]
+        d  = _safe_parse_date(ds)
+        if d and (win_start <= d <= win_end):
+            day_tabs.append((d, ds, ws))
+
+    classes = len(day_tabs)
+    ids = { str(r.get("Reg ID","")).strip() for r in student_rows }
+    abs_map   = { rid: 0 for rid in ids }
+    abs_dates = { rid: [] for rid in ids }
+
+    for _, ds, ws in day_tabs:
+        try:
+            rows = _gs_read(lambda: ws.get_all_records())
+            for a in rows:
+                rid = str(a.get("Reg ID","")).strip()
+                if rid in abs_map:
+                    abs_map[rid] += 1
+                    abs_dates[rid].append(ds)
+        except Exception:
+            pass
+
+    return abs_map, classes, abs_dates
+
+def _band_for(pct):
+    if pct >= 1.0:  return "100%"
+    if pct >= 0.80: return "High"
+    if pct >= 0.60: return "Average"
+    return "Low"
+
+def _build_mode_summary(mode_label, student_rows, abs_map, classes):
+    """
+    detailed_rows = [(RegID, Name, Present, Absent, PctFloat, Band)]
+    """
+    detailed = []
+    for r in student_rows:
+        rid  = str(r.get("Reg ID","")).strip()
+        name = r.get("Name","")
+        absd = abs_map.get(rid, 0)
+        pres = max(classes - absd, 0)
+        pct  = (pres / classes) if classes else 0.0
+        band = _band_for(pct)
+        detailed.append((rid, name, pres, absd, pct, band))
+
+    band_counts = {"100%":0, "High":0, "Average":0, "Low":0}
+    for _, _, _, _, _, band in detailed:
+        band_counts[band] += 1
+
+    lines = []
+    lines.append(f"📊 {mode_label} (last 14 days)")
+    lines.append(f"Classes in window: {classes}")
+    lines.append("")
+    if band_counts["100%"]>0: lines.append(f"✅ 100%: {band_counts['100%']}")
+    lines.append(f"🟢 High (≥80%): {band_counts['High']}")
+    lines.append(f"🟡 Average (60–79%): {band_counts['Average']}")
+    lines.append(f"🔴 Low (<60%): {band_counts['Low']}")
+    return "\n".join(lines), detailed, band_counts
+
+def _sorted_by_band(detailed_rows):
+    # Sort: Low -> Average -> High -> 100%, then by % asc, then name
+    order = {"Low":0, "Average":1, "High":2, "100%":3}
+    return sorted(detailed_rows, key=lambda t: (order.get(t[5], 9), t[4], t[1].lower()))
+
+def _write_biweekly_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Create a NEW tab for this bi-weekly window (‘BIW YYYY-MM-DD to YYYY-MM-DD’),
+    write sorted rows, optionally color by band, and return (tab_gid, tab_title).
+    Mirrors monthly/course behavior.
+    """
+    try:
+        wb = client.open_by_key(SHEET_ID)
+        base_title = f"BIW {win_start} to {win_end}"
+        tab_title = _make_unique_title(wb, base_title)
+        ws = wb.add_worksheet(title=tab_title, rows="2000", cols="10")
+        ws.update("A1:J1", [[
+            "Mode","RegID","Name","Present","Absent","Percent","Band",
+            "WindowStart","WindowEnd","CreatedAt"
+        ]])
+        if set_frozen:
+            try: set_frozen(ws, rows=1)
+            except Exception: pass
+
+        off_sorted = _sorted_by_band(off_rows)
+        on_sorted  = _sorted_by_band(on_rows)
+
+        def _fmt(mode, r):
+            rid,name,pres,absd,pct,band = r
+            return [mode,rid,name,pres,absd,round(pct*100,1),
+                    band,str(win_start),str(win_end),now_ts()]
+
+        rows_to_write = [_fmt("Offline",r) for r in off_sorted] + \
+                        [_fmt("Online",r) for r in on_sorted]
+        if rows_to_write:
+            ws.append_rows(rows_to_write,value_input_option='USER_ENTERED')
+
+        # --- optional colour formatting ---
+        if format_cell_ranges and Color and CellFormat:
+            try:
+                vals = ws.get_all_records()
+                colors = {
+                    "Low":     Color(1,0.8,0.8),
+                    "Average": Color(1,1,0.8),
+                    "High":    Color(0.85,1,0.85),
+                    "100%":    Color(0.85,0.9,1)
+                }
+                fmts = {k: CellFormat(backgroundColor=v,
+                        textFormat=TextFormat(bold=False)) for k,v in colors.items()}
+                for i,rec in enumerate(vals,start=2):
+                    band = rec.get("Band","")
+                    if band in fmts:
+                        try: format_cell_ranges(ws,[(f"A{i}:J{i}",fmts[band])])
+                        except Exception: pass
+            except Exception as e:
+                print("Colouring skipped for biweekly:",e)
+
+        return ws.id,tab_title
+    except Exception as e:
+        print("⚠️ BiWeekly sheet create/write error:",e)
+        return None,None
+
+
+def _post_biweekly_to_topic(msg_text):
+    """Public post to topic (no sheet links)."""
+    group_id = os.getenv("REPORT_GROUP_ID","").strip()
+    topic_id = os.getenv("REPORT_TOPIC_ID","").strip()
+    if not group_id or not topic_id:
+        print("⚠️ REPORT_GROUP_ID/REPORT_TOPIC_ID not set; skipping public topic post.")
+        return
+    try:
+        bot.send_message(chat_id=int(group_id), text=_truncate_text(msg_text), message_thread_id=int(topic_id))
+        print("✅ Bi-Weekly posted to topic.")
+    except Exception as e:
+        print("⚠️ Topic post failed:", e)
+
+def _enforce_low_in_app(low_reg_ids, win_start, win_end):
+    """
+    Call academy API to deny live/backup access for Low band.
+    No Telegram restriction is applied.
+    """
+    if str(os.getenv("ENFORCE_LOW_IN_APP","false")).lower() != "true":
+        return
+    url = (os.getenv("ACADEMY_API_URL") or "").strip()
+    key = (os.getenv("ACADEMY_API_KEY") or "").strip()
+    if not (url and key):
+        print("⚠️ Academy app URL/KEY missing; skip Low enforcement.")
+        return
+    payload = {
+        "window_start": str(win_start),
+        "window_end": str(win_end),
+        "reason": "low_attendance_14d",
+        "user_ids": list(low_reg_ids)  # reg_id == telegram user_id in your system
+    }
+    try:
+        r = requests.post(url, json=payload, headers={"Authorization": f"Bearer {key}", "Content-Type":"application/json"}, timeout=20)
+        print("📤 Academy lock req:", payload)
+        print("📥 Academy lock resp:", r.status_code, (r.text or "")[:400])
+    except Exception as e:
+        print("⚠️ Academy lock call failed:", e)
+
+def send_biweekly_report():
+    """
+    Public topic (no links) + admin DM + sheet write (sorted & coloured) + parent caution
+    + Academy-app lock for Low band.
+    """
+    today = datetime.now(ZoneInfo(TIMEZONE)).date()
+    start = _get_class_start_date()
+    win_start, win_end, _ = _current_biweekly_window(today, start)
+
+    # OFFLINE
+    off_students = get_cached_master_list()
+    off_absmap, off_classes, off_absdates = _collect_absences_between_with_dates(
+        ABSENTEE_SHEET_ID, "-offline", off_students, win_start, win_end
+    )
+    off_block, off_detailed, off_bands = _build_mode_summary("Offline", off_students, off_absmap, off_classes)
+
+    # ONLINE
+    on_students = get_cached_online_master_list()
+    on_absmap, on_classes, on_absdates = _collect_absences_between_with_dates(
+        ONLINE_ABSENTEE_SHEET_ID, "-online", on_students, win_start, win_end
+    )
+    on_block, on_detailed, on_bands = _build_mode_summary("Online", on_students, on_absmap, on_classes)
+
+    # Public message (no sheet links) — Offline then Online
+    title = f"📅 Bi-Weekly Summary: {win_start} – {win_end}"
+    public_msg = f"{title}\n\n{off_block}\n\n{on_block}"
+    _post_biweekly_to_topic(public_msg)
+
+    # Write to sheet (create new tab) and get gid + title
+    tab_gid, tab_title = _write_biweekly_sheet(win_start, win_end, off_detailed, on_detailed)
+
+    # Admin/Faculty message (build link if we got gid)
+    if tab_gid:
+        sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
+        admin_msg = public_msg + f"\n\n📄 Detailed rows are in: {tab_title}\n🔗 {sheet_link}"
+    else:
+        admin_msg = public_msg + "\n\n📄 Detailed rows are in the 'BiWeekly_Summary' (or check Reports workbook)."
+
+    if TEACHER_ID:
+        safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:
+        safe_send_chat(ADMIN_ID, admin_msg)
+
+    # Parent caution for Low band (DM via Telegram; will queue if parent not linked)
+    parent_tpl = os.getenv("PARENT_LOW_MSG",
+        "⚠️ Dear Parent, your child {student_name} ({reg_id}) recorded Low attendance (<60%) in the last 14 days. Absence dates: {dates}."
+    )
+
+    def _by_id(rows, rid):
+        for r in rows:
+            if str(r.get("Reg ID","")).strip() == rid:
+                return r
+        return {}
+
+    low_ids = set()
+
+    for rid, name, pres, absd, pct, band in off_detailed:
+        if band == "Low":
+            low_ids.add(rid)
+            dates = ", ".join(off_absdates.get(rid, [])) or "—"
+            # reuse existing notifier (queues if not linked)
+            notify_parent_telegram(rid, name, f"{win_start}–{win_end}", "offline bi-weekly")
+
+    for rid, name, pres, absd, pct, band in on_detailed:
+        if band == "Low":
+            low_ids.add(rid)
+            dates = ", ".join(on_absdates.get(rid, [])) or "—"
+            notify_parent_telegram(rid, name, f"{win_start}–{win_end}", "online bi-weekly")
+
+    # Deny live/backup in Academy app for Low band
+    _enforce_low_in_app(low_ids, win_start, win_end)
+
+   
+    # Write to sheet (sorted + coloured)
+    _write_biweekly_sheet(win_start, win_end, off_detailed, on_detailed)
+
+    # Parent caution for Low band (DM via Telegram; will queue if parent not linked)
+    parent_tpl = os.getenv("PARENT_LOW_MSG",
+        "⚠️ Dear Parent, your child {student_name} ({reg_id}) recorded Low attendance (<60%) in the last 14 days. Absence dates: {dates}."
+    )
+
+    def _by_id(rows, rid):
+        for r in rows:
+            if str(r.get("Reg ID","")).strip() == rid:
+                return r
+        return {}
+
+    low_ids = set()
+
+    for rid, name, pres, absd, pct, band in off_detailed:
+        if band == "Low":
+            low_ids.add(rid)
+            dates = ", ".join(off_absdates.get(rid, [])) or "—"
+            # reuse existing notifier (queues if not linked)
+            notify_parent_telegram(rid, name, f"{win_start}–{win_end}", "offline bi-weekly")
+            # You could also send WhatsApp via MSG91 here using your helper, if needed.
+
+    for rid, name, pres, absd, pct, band in on_detailed:
+        if band == "Low":
+            low_ids.add(rid)
+            dates = ", ".join(on_absdates.get(rid, [])) or "—"
+            notify_parent_telegram(rid, name, f"{win_start}–{win_end}", "online bi-weekly")
+
+    # Deny live/backup in Academy app for Low band
+    _enforce_low_in_app(low_ids, win_start, win_end)
+
+    print("✅ Bi-Weekly: topic posted, admin notified, sheet updated, parents cautioned, app lock attempted.")
+
+    for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Bi-Weekly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Bi-Weekly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        safe_send_chat(student["Reg ID"], msg_s)
+        if student.get("ParentChatId"):
+            safe_send_chat(student["ParentChatId"], msg_p)
+        db.update_streak(student["Reg ID"], boost=True)
+
+
+
+    # --- Auto-publish Top 3 for manual and worker Bi-Weekly ---
+    try:
+        publish_top3_to_teacher_and_topic()
+    except Exception as e:
+        print("Bi-Weekly -> Top3 publish error (send_biweekly_report):",e)
+        if ADMIN_ID:
+            safe_send_chat(ADMIN_ID, f"⚠️ Bi-Weekly Top3 publish failed: {e}")
+
+
+
+
+firdt check why the firebase version never writes the biweekly report to firebase like my google sheet version then this is my firebase version see what you are missing and now just give me the combined version soo that it generates the google sheet link and share it to facult and admin dm 
+
+dont skip or delete any thing just add these features from my old eod to the firebase and give me a complete new eod so that i can just paste it 
+
+just give me the code and atlast summarise what you did and checck with my old biweekly ok 
+
+
+
+fire base biweekly
+
+# ---------------- Bi-Weekly helpers (public topic + admin sheet + parent caution + app lock) ----------------
+
+def _safe_parse_date(s):
+    if not s:
+        return None
+    # prefer dateutil if available
+    if _dateparse:
+        try:
+            return _dateparse(str(s)).date()
+        except Exception:
+            pass
+    try:
+        return datetime.strptime(str(s), "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+def _get_class_start_date():
+    # Prefer Settings!D2 if present; else infer earliest absentee doc date from Firestore; else today
+    try:
+        val = settings_sheet.acell("D2").value
+        dt = _safe_parse_date(val)
+        if dt:
+            return dt
+    except Exception:
+        pass
+
+    fs_db = firestore.client()
+    dates = []
+    try:
+        off_dates_col = fs_db.collection("absentees").document("offline").collection("dates")
+        for doc in off_dates_col.list_documents():
+            d = _safe_parse_date(doc.id)
+            if d:
+                dates.append(d)
+    except Exception:
+        pass
+    try:
+        on_dates_col = fs_db.collection("absentees").document("online").collection("dates")
+        for doc in on_dates_col.list_documents():
+            d = _safe_parse_date(doc.id)
+            if d:
+                dates.append(d)
+    except Exception:
+        pass
+
+    return min(dates) if dates else datetime.now(ZoneInfo(TIMEZONE)).date()
+
+def _days_since(start_date, today_date):
+    return (today_date - start_date).days
+
+def _current_biweekly_window(today_date, start_date):
+    """
+    Window length = 14 days. Returns (win_start, win_end, is_boundary_today).
+    Cycle n: [start+14n, start+14n+13]; boundary day is win_end.
+    """
+    days = _days_since(start_date, today_date)
+    if days < 0:
+        return (today_date, today_date, False)
+    idx = days // 14
+    win_start = start_date + timedelta(days=14*idx)
+    win_end   = win_start + timedelta(days=13)
+    return (win_start, win_end, today_date == win_end)
+
+def _collect_absences_between_with_dates(sheet_key, suffix, student_rows, win_start, win_end):
+    """
+    Reads absentee documents from Firestore absentees/<mode>/dates/<YYYY-MM-DD> within [win_start..win_end].
+    Returns: abs_map {rid: absent_days}, classes count, abs_dates {rid: [YYYY-MM-DD,...]}
+    """
+    fs_db = firestore.client()
+    # determine mode from suffix
+    mode = "offline" if "offline" in suffix else "online"
+    try:
+        col = fs_db.collection("absentees").document(mode).collection("dates")
+        docs = list(col.list_documents())
+    except Exception:
+        docs = []
+
+    day_docs = []
+    for d in docs:
+        ds = d.id
+        dt = _safe_parse_date(ds)
+        if dt and (win_start <= dt <= win_end):
+            day_docs.append((dt, ds, d))
+
+    classes = len(day_docs)
+    ids = { str(r.get("Reg ID","")).strip() for r in student_rows }
+    abs_map   = { rid: 0 for rid in ids }
+    abs_dates = { rid: [] for rid in ids }
+
+    for _, ds, doc_ref in day_docs:
+        try:
+            doc = doc_ref.get()
+            if not doc.exists:
+                continue
+            rows = (doc.to_dict() or {}).get("rows", [])
+            for a in rows:
+                rid = str(a.get("Reg ID","")).strip()
+                if rid in abs_map:
+                    abs_map[rid] += 1
+                    abs_dates[rid].append(ds)
+        except Exception:
+            pass
+
+    return abs_map, classes, abs_dates
+
+def _band_for(pct):
+    if pct >= 1.0:  return "100%"
+    if pct >= 0.80: return "High"
+    if pct >= 0.60: return "Average"
+    return "Low"
+
+def _build_mode_summary(mode_label, student_rows, abs_map, classes):
+    """
+    detailed_rows = [(RegID, Name, Present, Absent, PctFloat, Band)]
+    """
+    detailed = []
+    for r in student_rows:
+        rid  = str(r.get("Reg ID","")).strip()
+        name = r.get("Name","")
+        absd = abs_map.get(rid, 0)
+        pres = max(classes - absd, 0)
+        pct  = (pres / classes) if classes else 0.0
+        band = _band_for(pct)
+        detailed.append((rid, name, pres, absd, pct, band))
+
+    band_counts = {"100%":0, "High":0, "Average":0, "Low":0}
+    for _, _, _, _, _, band in detailed:
+        band_counts[band] += 1
+
+    lines = []
+    lines.append(f"📊 {mode_label} (last 14 days)")
+    lines.append(f"Classes in window: {classes}")
+    lines.append("")
+    if band_counts["100%"]>0: lines.append(f"✅ 100%: {band_counts['100%']}")
+    lines.append(f"🟢 High (≥80%): {band_counts['High']}")
+    lines.append(f"🟡 Average (60–79%): {band_counts['Average']}")
+    lines.append(f"🔴 Low (<60%): {band_counts['Low']}")
+    return "\n".join(lines), detailed, band_counts
+
+def _sorted_by_band(detailed_rows):
+    # Sort: Low -> Average -> High -> 100%, then by % asc, then name
+    order = {"Low":0, "Average":1, "High":2, "100%":3}
+    return sorted(detailed_rows, key=lambda t: (order.get(t[5], 9), t[4], t[1].lower()))
+
+def _write_biweekly_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Create a NEW tab for this bi-weekly window (‘BIW YYYY-MM-DD to YYYY-MM-DD’),
+    write sorted rows, optionally color by band, and return (tab_gid, tab_title).
+    Mirrors monthly/course behavior.
+    """
+    try:
+        wb = client.open_by_key(SHEET_ID)
+        base_title = f"BIW {win_start} to {win_end}"
+        tab_title = _make_unique_title(wb, base_title)
+        ws = wb.add_worksheet(title=tab_title, rows="2000", cols="10")
+        ws.update("A1:J1", [[
+            "Mode","RegID","Name","Present","Absent","Percent","Band",
+            "WindowStart","WindowEnd","CreatedAt"
+        ]])
+        if set_frozen:
+            try: set_frozen(ws, rows=1)
+            except Exception: pass
+
+        off_sorted = _sorted_by_band(off_rows)
+        on_sorted  = _sorted_by_band(on_rows)
+
+        def _fmt(mode, r):
+            rid,name,pres,absd,pct,band = r
+            return [mode,rid,name,pres,absd,round(pct*100,1),
+                    band,str(win_start),str(win_end),now_ts()]
+
+        rows_to_write = [_fmt("Offline",r) for r in off_sorted] + \
+                        [_fmt("Online",r) for r in on_sorted]
+        if rows_to_write:
+            ws.append_rows(rows_to_write,value_input_option='USER_ENTERED')
+
+        # --- optional colour formatting ---
+        if format_cell_ranges and Color and CellFormat:
+            try:
+                vals = ws.get_all_records()
+                colors = {
+                    "Low":     Color(1,0.8,0.8),
+                    "Average": Color(1,1,0.8),
+                    "High":    Color(0.85,1,0.85),
+                    "100%":    Color(0.85,0.9,1)
+                }
+                fmts = {k: CellFormat(backgroundColor=v,
+                        textFormat=TextFormat(bold=False)) for k,v in colors.items()}
+                for i,rec in enumerate(vals,start=2):
+                    band = rec.get("Band","")
+                    if band in fmts:
+                        try: format_cell_ranges(ws,[(f"A{i}:J{i}",fmts[band])])
+                        except Exception: pass
+            except Exception as e:
+                print("Colouring skipped for biweekly:",e)
+
+        return ws.id,tab_title
+    except Exception as e:
+        print("⚠️ BiWeekly sheet create/write error:",e)
+        return None,None
+
+def _post_biweekly_to_topic(msg_text):
+    """Public post to topic (no sheet links)."""
+    group_id = os.getenv("REPORT_GROUP_ID","").strip()
+    topic_id = os.getenv("REPORT_TOPIC_ID","").strip()
+    if not group_id or not topic_id:
+        print("⚠️ REPORT_GROUP_ID/REPORT_TOPIC_ID not set; skipping public topic post.")
+        return
+    try:
+        bot.send_message(chat_id=int(group_id), text=_truncate_text(msg_text), message_thread_id=int(topic_id))
+        print("✅ Bi-Weekly posted to topic.")
+    except Exception as e:
+        print("⚠️ Topic post failed:", e)
+
+def _enforce_low_in_app(low_reg_ids, win_start, win_end):
+    """
+    Call academy API to deny live/backup access for Low band.
+    No Telegram restriction is applied.
+    """
+    if str(os.getenv("ENFORCE_LOW_IN_APP","false")).lower() != "true":
+        return
+    url = (os.getenv("ACADEMY_API_URL") or "").strip()
+    key = (os.getenv("ACADEMY_API_KEY") or "").strip()
+    if not (url and key):
+        print("⚠️ Academy app URL/KEY missing; skip Low enforcement.")
+        return
+    payload = {
+        "window_start": str(win_start),
+        "window_end": str(win_end),
+        "reason": "low_attendance_14d",
+        "user_ids": list(low_reg_ids)  # reg_id == telegram user_id in your system
+    }
+    try:
+        r = requests.post(url, json=payload, headers={"Authorization": f"Bearer {key}", "Content-Type":"application/json"}, timeout=20)
+        print("📤 Academy lock req:", payload)
+        print("📥 Academy lock resp:", r.status_code, (r.text or "")[:400])
+    except Exception as e:
+        print("⚠️ Academy lock call failed:", e)
+
+def send_biweekly_report():
+    """
+    Public topic (no links) + admin DM + sheet write (sorted & coloured) + parent caution
+    + Academy-app lock for Low band.
+    Firestore-backed absentee reading; sheet-writing for the summary tab is preserved.
+    """
+    today = datetime.now(ZoneInfo(TIMEZONE)).date()
+    start = _get_class_start_date()
+    win_start, win_end, _ = _current_biweekly_window(today, start)
+
+    # OFFLINE
+    off_students = get_cached_master_list()
+    off_absmap, off_classes, off_absdates = _collect_absences_between_with_dates(
+        ABSENTEE_SHEET_ID, "-offline", off_students, win_start, win_end
+    )
+    off_block, off_detailed, off_bands = _build_mode_summary("Offline", off_students, off_absmap, off_classes)
+
+    # ONLINE
+    on_students = get_cached_online_master_list()
+    on_absmap, on_classes, on_absdates = _collect_absences_between_with_dates(
+        ONLINE_ABSENTEE_SHEET_ID, "-online", on_students, win_start, win_end
+    )
+    on_block, on_detailed, on_bands = _build_mode_summary("Online", on_students, on_absmap, on_classes)
+
+    # Public message (no sheet links) — Offline then Online
+    title = f"📅 Bi-Weekly Summary: {win_start} – {win_end}"
+    public_msg = f"{title}\n\n{off_block}\n\n{on_block}"
+    _post_biweekly_to_topic(public_msg)
+
+    # Write to sheet (create new tab) and get gid + title
+    tab_gid, tab_title = _write_biweekly_sheet(win_start, win_end, off_detailed, on_detailed)
+
+    # Admin/Faculty message (build link if we got gid)
+    if tab_gid:
+        sheet_link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
+        admin_msg = public_msg + f"\n\n📄 Detailed rows are in: {tab_title}\n🔗 {sheet_link}"
+    else:
+        admin_msg = public_msg + "\n\n📄 Detailed rows are in the 'BiWeekly_Summary' (or check Reports workbook)."
+
+    if TEACHER_ID:
+        safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:
+        safe_send_chat(ADMIN_ID, admin_msg)
+
+    # Parent caution for Low band (DM via Telegram; will queue if parent not linked)
+    parent_tpl = os.getenv("PARENT_LOW_MSG",
+        "⚠️ Dear Parent, your child {student_name} ({reg_id}) recorded Low attendance (<60%) in the last 14 days. Absence dates: {dates}."
+    )
+
+    def _by_id(rows, rid):
+        for r in rows:
+            if str(r.get("Reg ID","")).strip() == rid:
+                return r
+        return {}
+
+    low_ids = set()
+
+    for rid, name, pres, absd, pct, band in off_detailed:
+        if band == "Low":
+            low_ids.add(rid)
+            dates = ", ".join(off_absdates.get(rid, [])) or "—"
+            # reuse existing notifier (queues if not linked)
+            notify_parent_telegram(rid, name, f"{win_start}–{win_end}", "offline bi-weekly")
+
+    for rid, name, pres, absd, pct, band in on_detailed:
+        if band == "Low":
+            low_ids.add(rid)
+            dates = ", ".join(on_absdates.get(rid, [])) or "—"
+            notify_parent_telegram(rid, name, f"{win_start}–{win_end}", "online bi-weekly")
+
+    # Deny live/backup in Academy app for Low band
+    _enforce_low_in_app(low_ids, win_start, win_end)
+
+    # Write to sheet (sorted + coloured) — redundant write to ensure tab exists
+    _write_biweekly_sheet(win_start, win_end, off_detailed, on_detailed)
+
+    print("✅ Bi-Weekly: topic posted, admin notified, sheet updated, parents cautioned, app lock attempted.")
+
+    for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Bi-Weekly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Bi-Weekly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        try:
+            safe_send_chat(student["Reg ID"], msg_s)
+        except Exception:
+            pass
+        if student.get("ParentChatId"):
+            try:
+                safe_send_chat(student["ParentChatId"], msg_p)
+            except Exception:
+                pass
+        try:
+            db.update_streak(student["Reg ID"], boost=True)
+        except Exception:
+            pass
+
+    # --- Auto-publish Top 3 for manual and worker Bi-Weekly ---
+    try:
+        publish_top3_to_teacher_and_topic()
+    except Exception as e:
+        print("Bi-Weekly -> Top3 publish error (send_biweekly_report):",e)
+        if ADMIN_ID:
+            safe_send_chat(ADMIN_ID, f"⚠️ Bi-Weekly Top3 publish failed: {e}")
+
+
+
