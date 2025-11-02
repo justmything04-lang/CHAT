@@ -2027,3 +2027,698 @@ def send_biweekly_report():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+this is my eod in normal version \
+
+
+# ---------------- Monthly & Course helpers (public topic + admin tab link + risk watch + parent caution) ----------------
+
+def _month_window_for(date_obj):
+    y, m = date_obj.year, date_obj.month
+    first = datetime(y, m, 1, tzinfo=ZoneInfo(TIMEZONE)).date()
+    last_day = calendar.monthrange(y, m)[1]
+    last = datetime(y, m, last_day, tzinfo=ZoneInfo(TIMEZONE)).date()
+    return first, last
+
+def _collect_absences_between(sheet_key, suffix, student_rows, win_start, win_end):
+    # thin wrapper to use the bi-weekly collector you already have
+    return _collect_absences_between_with_dates(sheet_key, suffix, student_rows, win_start, win_end)
+
+def _risk_band_for(pct, risk_threshold):
+    return "Risk" if pct <= risk_threshold else None
+
+def _make_unique_title(wb, base_title):
+    """
+    Ensures a new tab is created each time:
+    - If base title is free -> use it
+    - Else append timestamp suffix: 'base HHMMSS'
+    """
+    try:
+        titles = [ws.title for ws in wb.worksheets()]
+    except Exception:
+        titles = []
+    if base_title not in titles:
+        return base_title
+    suffix = datetime.now(ZoneInfo(TIMEZONE)).strftime("%H%M%S")
+    return f"{base_title} {suffix}"
+
+def _write_monthly_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Always creates a NEW tab: 'MON YYYY-MM' (or with HHMMSS if repeated).
+    Columns: Mode, RegID, Name, Present, Absent, Percent, Band, WindowStart, WindowEnd, CreatedAt
+    Returns: (tab_gid, tab_title)
+    """
+    wb = client.open_by_key(SHEET_ID)
+    base_title = f"MON {win_start.strftime('%Y-%m')}"
+    tab_title = _make_unique_title(wb, base_title)
+    ws = wb.add_worksheet(title=tab_title, rows="4000", cols="10")
+    ws.update("A1:J1", [[
+        "Mode","RegID","Name","Present","Absent","Percent","Band",
+        "WindowStart","WindowEnd","CreatedAt"
+    ]])
+    if set_frozen:
+        try: set_frozen(ws, rows=1)
+        except Exception: pass
+
+    off_sorted = _sorted_by_band(off_rows)
+    on_sorted  = _sorted_by_band(on_rows)
+
+    def _fmt(mode, r):
+        rid, name, pres, absd, pct, band = r
+        return [mode, rid, name, pres, absd, round(pct*100,1), band, str(win_start), str(win_end), now_ts()]
+
+    rows_to_write = [_fmt("Offline", r) for r in off_sorted] + [_fmt("Online", r) for r in on_sorted]
+    if rows_to_write:
+        ws.append_rows(rows_to_write, value_input_option='USER_ENTERED')
+
+    # optional colours (same as bi-weekly)
+    if format_cell_ranges and Color and CellFormat:
+        try:
+            vals = ws.get_all_records()
+            colors = {
+                "Low":     Color(1, 0.8, 0.8),   # (we use bi-weekly band names)
+                "Average": Color(1, 1, 0.8),
+                "High":    Color(0.85, 1, 0.85),
+                "100%":    Color(0.85, 0.90, 1)
+            }
+            fmt_cache = {k: CellFormat(backgroundColor=v, textFormat=TextFormat(bold=False)) for k, v in colors.items()}
+            for i, rec in enumerate(vals, start=2):
+                band = rec.get("Band","")
+                if band in fmt_cache:
+                    try:
+                        format_cell_ranges(ws, [(f"A{i}:J{i}", fmt_cache[band])])
+                    except Exception:
+                        pass
+        except Exception as e:
+            print("Colouring skipped:", e)
+
+    return ws.id, tab_title
+
+def _write_course_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Always creates a NEW tab: 'COURSE start_to_end' (with HHMMSS if duplicate).
+    Returns (tab_gid, tab_title) and applies colour coding like bi-weekly/monthly.
+    """
+    wb = client.open_by_key(SHEET_ID)
+    base_title = f"COURSE {win_start} to {win_end}"
+    tab_title = _make_unique_title(wb, base_title)
+    ws = wb.add_worksheet(title=tab_title, rows="6000", cols="10")
+    ws.update("A1:J1", [[
+        "Mode","RegID","Name","Present","Absent","Percent","Band",
+        "WindowStart","WindowEnd","CreatedAt"
+    ]])
+    if set_frozen:
+        try: set_frozen(ws, rows=1)
+        except Exception: pass
+
+    off_sorted = _sorted_by_band(off_rows)
+    on_sorted  = _sorted_by_band(on_rows)
+
+    def _fmt(mode, r):
+        rid,name,pres,absd,pct,band = r
+        return [mode,rid,name,pres,absd,round(pct*100,1),
+                band,str(win_start),str(win_end),now_ts()]
+
+    rows_to_write = [_fmt("Offline",r) for r in off_sorted] + \
+                    [_fmt("Online",r) for r in on_sorted]
+    if rows_to_write:
+        ws.append_rows(rows_to_write,value_input_option='USER_ENTERED')
+
+    # --- colour bands ---
+    if format_cell_ranges and Color and CellFormat:
+        try:
+            vals = ws.get_all_records()
+            colors = {
+                "Low":Color(1,0.8,0.8),
+                "Average":Color(1,1,0.8),
+                "High":Color(0.85,1,0.85),
+                "100%":Color(0.85,0.9,1)
+            }
+            fmts={k:CellFormat(backgroundColor=v,
+                 textFormat=TextFormat(bold=False)) for k,v in colors.items()}
+            for i,rec in enumerate(vals,start=2):
+                band=rec.get("Band","")
+                if band in fmts:
+                    try: format_cell_ranges(ws,[(f"A{i}:J{i}",fmts[band])])
+                    except Exception: pass
+        except Exception as e:
+            print("Colouring skipped for course summary:",e)
+
+    return ws.id, tab_title
+
+def _post_public(msg_text):
+    group_id = os.getenv("REPORT_GROUP_ID","").strip()
+    topic_id = os.getenv("REPORT_TOPIC_ID","").strip()
+    if not group_id or not topic_id:
+        print("⚠️ REPORT_GROUP_ID/REPORT_TOPIC_ID not set; skipping public topic post.")
+        return
+    try:
+        bot.send_message(chat_id=int(group_id), text=_truncate_text(msg_text), message_thread_id=int(topic_id))
+    except Exception as e:
+        print("⚠️ Public post failed:", e)
+
+def _send_parent_risk_alerts(risk_list, abs_dates_map, window_label):
+    # risk_list is a list of tuples (rid, name, pres, absd, pct, band)
+    tpl = os.getenv("PARENT_RISK_MSG",
+        "⚠️ Dear Parent, your child {student_name} ({reg_id}) is at risk (≤50%) for {window_label}. Absence dates: {dates}."
+    )
+    for rid, name, pres, absd, pct, band in risk_list:
+        dates = ", ".join(abs_dates_map.get(rid, [])) or "—"
+        # reuse your Telegram notifier (queues if not linked)
+        # send a concise window label in the date slot
+        try:
+            msg = tpl.format(student_name=name, reg_id=rid, window_label=window_label, dates=dates)
+            # deliver via Telegram parent queue path:
+            # here we pass window_label in 'date' slot just to reuse the same function signature
+            notify_parent_telegram(rid, name, window_label, "risk")
+        except Exception as e:
+            print("Parent risk DM build error:", e)
+
+def send_monthly_report():
+    """
+    Auto/manual monthly report.
+    Window: first..last day of current month (auto on last day), or first..today (if run mid-month).
+    Creates a NEW tab and DMs faculty/admin with direct tab link (gid).
+    Public topic gets clean counts and Risk Watch.
+    """
+    now_local = datetime.now(ZoneInfo(TIMEZONE)).date()
+    m_first, m_last = _month_window_for(now_local)
+    # if run mid-month manually, use first..today to avoid empty future days
+    win_end = m_last if now_local == m_last else now_local
+    win_start = m_first
+    risk_threshold = float(os.getenv("RISK_THRESHOLD","0.50"))
+
+    # collect
+    off_students = get_cached_master_list()
+    on_students  = get_cached_online_master_list()
+    off_absmap, off_classes, off_absdates = _collect_absences_between(ABSENTEE_SHEET_ID, "-offline", off_students, win_start, win_end)
+    on_absmap,  on_classes,  on_absdates  = _collect_absences_between(ONLINE_ABSENTEE_SHEET_ID, "-online",  on_students,  win_start, win_end)
+
+    # detail rows + bands
+    off_block, off_detailed, _ = _build_mode_summary("Offline", off_students, off_absmap, off_classes)
+    on_block,  on_detailed,  _ = _build_mode_summary("Online",  on_students,  on_absmap,  on_classes)
+
+    # Risk Watch (≤50%)
+    def _riskify(rows):
+        out = []
+        for rid, name, pres, absd, pct, band in rows:
+            if pct <= risk_threshold:
+                out.append((rid, name, pres, absd, pct, band))
+        return out
+    risk_off = _riskify(off_detailed)
+    risk_on  = _riskify(on_detailed)
+    risk_total = len(risk_off) + len(risk_on)
+
+    # sheet write (new tab)
+    tab_gid, tab_title = _write_monthly_sheet(win_start, win_end, off_detailed, on_detailed)
+    link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
+
+    # messages
+    title = f"📅 Monthly Summary: {win_start} – {win_end}"
+    public_msg = f"{title}\n\n{off_block}\n\n{on_block}\n\n🚩 Risk Watch (≤{int(risk_threshold*100)}%): {risk_total}"
+    _post_public(public_msg)
+
+    admin_msg = public_msg + f"\n\n📄 Tab: {tab_title}\n🔗 {link}"
+    if TEACHER_ID: safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:   safe_send_chat(ADMIN_ID,   admin_msg)
+
+    # parent cautions for Risk
+    window_label = f"Monthly {win_start}–{win_end}"
+    _send_parent_risk_alerts(risk_off, off_absdates, window_label)
+    _send_parent_risk_alerts(risk_on,  on_absdates,  window_label)
+
+    # optional: academy app lock (monthly)
+
+    _enforce_low_in_app({rid for rid, *_ in (risk_off + risk_on)}, win_start, win_end)
+
+    for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Monthly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Monthly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        safe_send_chat(student["Reg ID"], msg_s)
+        if student.get("ParentChatId"):
+            safe_send_chat(student["ParentChatId"], msg_p)
+        db.update_streak(student["Reg ID"], boost=True)
+
+
+    # --- Auto-publish Top 3 together with Monthly ---
+    try:
+        publish_top3_to_teacher_and_topic()
+    except Exception as e:
+        print("Monthly -> Top3 publish error (send_monthly_report):",e)
+        if ADMIN_ID:
+            safe_send_chat(ADMIN_ID, f"⚠️ Monthly Top3 publish failed: {e}")
+
+    print("✅ Monthly report done.")
+
+def send_course_summary_report():
+    """
+    Full-course window: from class start (Settings!D2 or earliest tab) till today.
+    Creates a NEW tab and DMs link; public post shows counts + risk watch.
+    """
+    today = datetime.now(ZoneInfo(TIMEZONE)).date()
+    start = _get_class_start_date()
+    win_start, win_end = start, today
+    risk_threshold = float(os.getenv("RISK_THRESHOLD","0.50"))
+
+    off_students = get_cached_master_list()
+    on_students  = get_cached_online_master_list()
+    off_absmap, off_classes, off_absdates = _collect_absences_between(ABSENTEE_SHEET_ID, "-offline", off_students, win_start, win_end)
+    on_absmap,  on_classes,  on_absdates  = _collect_absences_between(ONLINE_ABSENTEE_SHEET_ID, "-online",  on_students,  win_start, win_end)
+
+    off_block, off_detailed, _ = _build_mode_summary("Offline", off_students, off_absmap, off_classes)
+    on_block,  on_detailed,  _ = _build_mode_summary("Online",  on_students,  on_absmap,  on_classes)
+
+    def _riskify(rows):
+        return [t for t in rows if t[4] <= risk_threshold]
+    risk_off = _riskify(off_detailed)
+    risk_on  = _riskify(on_detailed)
+    risk_total = len(risk_off) + len(risk_on)
+
+    tab_gid, tab_title = _write_course_sheet(win_start, win_end, off_detailed, on_detailed)
+    link = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={tab_gid}"
+
+    title = f"📘 Course Summary: {win_start} – {win_end}"
+    public_msg = f"{title}\n\n{off_block}\n\n{on_block}\n\n🚩 Risk Watch (≤{int(risk_threshold*100)}%): {risk_total}"
+    _post_public(public_msg)
+
+    admin_msg = public_msg + f"\n\n📄 Tab: {tab_title}\n🔗 {link}"
+    if TEACHER_ID: safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:   safe_send_chat(ADMIN_ID,   admin_msg)
+
+    window_label = f"Course {win_start}–{win_end}"
+    _send_parent_risk_alerts(risk_off, off_absdates, window_label)
+    _send_parent_risk_alerts(risk_on,  on_absdates,  window_label)
+
+    _enforce_low_in_app({rid for rid, *_ in (risk_off + risk_on)}, win_start, win_end)
+
+    for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Course Summary",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Course Summary",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        safe_send_chat(student["Reg ID"], msg_s)
+        if student.get("ParentChatId"):
+            safe_send_chat(student["ParentChatId"], msg_p)
+        db.update_streak(student["Reg ID"], boost=True)
+
+
+    try:
+        publish_top3_to_teacher_and_topic()
+    except Exception as e:
+        print("Course Summary -> Top3 publish error:", e)
+
+    print("✅ Course summary done.")
+
+
+
+
+
+
+
+
+
+
+now just give me the combined version soo that it generates the google sheet link and share it to facult and admin dm 
+
+dont skip or delete any thing just add these features from my old eod to the firebase and give me a complete new eod so that i can just paste it 
+
+just give me the code and atlast summarise what you did and checck with my old monthly ok 
+
+fire base monthly
+
+# ---------------- Monthly & Course helpers (public topic + admin tab link + risk watch + parent caution) ----------------
+
+def _month_window_for(date_obj):
+    y, m = date_obj.year, date_obj.month
+    first = datetime(y, m, 1, tzinfo=ZoneInfo(TIMEZONE)).date()
+    last_day = calendar.monthrange(y, m)[1]
+    last = datetime(y, m, last_day, tzinfo=ZoneInfo(TIMEZONE)).date()
+    return first, last
+
+# --- Firestore helpers (assumes firebase_admin initialized earlier) ---
+def _fs_client():
+    try:
+        return firestore.client()
+    except Exception:
+        # fallback if a different client variable is used in your project
+        try:
+            return db  # sometimes `db` is the firestore client in your codebase
+        except Exception:
+            raise
+
+def _fs_doc_exists(path_parts):
+    """
+    path_parts: list like ["absentees","offline","2025-11-01"]
+    """
+    fs = _fs_client()
+    # join into collection/doc pattern: coll/doc/coll/doc...
+    try:
+        ref = fs
+        # alternate traversal depending on client implementation
+        if hasattr(fs, "collection"):
+            # proper firestore client
+            ref = fs.collection(path_parts[0])
+            for i, part in enumerate(path_parts[1:]):
+                if i % 1 == 0 and (i + 1) < len(path_parts[1:]) + 1:
+                    # treat alternation as doc -> next collection
+                    # simpler: alternate collection/doc starting from collection
+                    try:
+                        ref = ref.document(part)
+                    except Exception:
+                        ref = ref.document(part)
+                    # next loop will call collection on this doc if needed
+                else:
+                    try:
+                        ref = ref.document(part)
+                    except Exception:
+                        ref = ref.document(part)
+        else:
+            # if fs is a wrapper/dict-like
+            return False
+        # ultimately try get()
+        if hasattr(ref, "get"):
+            d = ref.get()
+            return d.exists if hasattr(d, "exists") else bool(d)
+        return False
+    except Exception:
+        return False
+
+def _fs_get_absentee_docs(mode, win_start, win_end):
+    """
+    mode: "offline" or "online"
+    returns list of tuples: (date_str, list_of_rows) where each row is dict with Reg ID, Name, Date
+    """
+    fs = _fs_client()
+    out = []
+    try:
+        coll = fs.collection("absentees").document(mode).collection("by_date")
+        # Query: date field between win_start and win_end
+        start_s = str(win_start)
+        end_s = str(win_end)
+        q = coll.where("date_str", ">=", start_s).where("date_str", "<=", end_s)
+        docs = q.stream()
+        for d in docs:
+            try:
+                rec = d.to_dict() or {}
+                date_str = rec.get("date_str") or d.id
+                rows = rec.get("rows") or []
+                out.append((date_str, rows))
+            except Exception:
+                pass
+    except Exception:
+        # fallback: try listing all and filter client-side
+        try:
+            coll = fs.collection("absentees").document(mode).collection("by_date")
+            docs = coll.stream()
+            for d in docs:
+                rec = d.to_dict() or {}
+                date_str = rec.get("date_str") or d.id
+                try:
+                    dt = _safe_parse_date(date_str)
+                except Exception:
+                    dt = None
+                if dt and (win_start <= dt <= win_end):
+                    out.append((date_str, rec.get("rows") or []))
+        except Exception:
+            pass
+    # sort by date
+    try:
+        out.sort(key=lambda x: x[0])
+    except Exception:
+        pass
+    return out
+
+def _fs_write_report(mode, collection_name, doc_id, payload):
+    """
+    Write computed report to `reports/{collection_name}/{doc_id}` as a document.
+    payload is a dict; this writes timestamp 'created_at' and 'rows' if present.
+    """
+    fs = _fs_client()
+    try:
+        docref = fs.collection("reports").document(collection_name).collection("items").document(str(doc_id))
+        payload = dict(payload)
+        payload.setdefault("created_at", datetime.now(ZoneInfo(TIMEZONE)).isoformat())
+        docref.set(payload)
+        return True
+    except Exception:
+        try:
+            # fallback to top-level path
+            docref = fs.collection("reports").document(str(doc_id))
+            docref.set(payload)
+            return True
+        except Exception:
+            return False
+
+def _make_unique_report_title(base_title, report_type):
+    """
+    Ensure uniqueness by checking `reports/{report_type}/items` for existing doc IDs.
+    Returns a safe title (string) to use as doc id.
+    """
+    fs = _fs_client()
+    try:
+        coll = fs.collection("reports").document(report_type).collection("items")
+        # direct check
+        existing = [d.id for d in coll.stream()]
+    except Exception:
+        existing = []
+    if base_title not in existing:
+        return base_title
+    suffix = datetime.now(ZoneInfo(TIMEZONE)).strftime("%Y%m%d%H%M%S")
+    return f"{base_title} {suffix}"
+
+# Thin wrapper to match old function signature (keeps compatibility)
+def _collect_absences_between(sheet_key, suffix, student_rows, win_start, win_end):
+    """
+    Now reads absentees from Firestore. sheet_key/suffix are ignored; student_rows used for id set.
+    Returns: abs_map {rid: absent_days}, classes count, abs_dates {rid: [YYYY-MM-DD,...]}
+    """
+    # identify mode from suffix
+    mode = "offline" if suffix and "offline" in suffix else "online"
+    day_docs = _fs_get_absentee_docs(mode, win_start, win_end)  # list of (date_str, rows)
+    classes = len(day_docs)
+    ids = { str(r.get("Reg ID","")).strip() for r in student_rows }
+    abs_map = { rid: 0 for rid in ids }
+    abs_dates = { rid: [] for rid in ids }
+
+    for ds, rows in day_docs:
+        try:
+            for a in rows:
+                rid = str(a.get("Reg ID","")).strip() if isinstance(a, dict) else str(a[1]).strip() if isinstance(a, (list,tuple)) and len(a) > 1 else ""
+                if rid in abs_map:
+                    abs_map[rid] += 1
+                    abs_dates[rid].append(ds)
+        except Exception:
+            pass
+    return abs_map, classes, abs_dates
+
+def _risk_band_for(pct, risk_threshold):
+    return "Risk" if pct <= risk_threshold else None
+
+def _write_monthly_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Writes monthly report into Firestore instead of a sheet tab.
+    Returns (doc_id, title) as replacement for gid/title.
+    """
+    base_title = f"MON {win_start.strftime('%Y-%m')}"
+    title = _make_unique_report_title(base_title, "monthly")
+    rows = []
+    for r in _sorted_by_band(off_rows):
+        rid, name, pres, absd, pct, band = r
+        rows.append({
+            "mode": "Offline",
+            "regid": rid,
+            "name": name,
+            "present": pres,
+            "absent": absd,
+            "percent": round(pct*100,1),
+            "band": band,
+            "window_start": str(win_start),
+            "window_end": str(win_end),
+            "created_at": now_ts()
+        })
+    for r in _sorted_by_band(on_rows):
+        rid, name, pres, absd, pct, band = r
+        rows.append({
+            "mode": "Online",
+            "regid": rid,
+            "name": name,
+            "present": pres,
+            "absent": absd,
+            "percent": round(pct*100,1),
+            "band": band,
+            "window_start": str(win_start),
+            "window_end": str(win_end),
+            "created_at": now_ts()
+        })
+    payload = {
+        "title": title,
+        "window_start": str(win_start),
+        "window_end": str(win_end),
+        "rows": rows
+    }
+    ok = _fs_write_report("monthly", "monthly", title, payload)
+    if ok:
+        return title, title
+    return None, None
+
+def _write_course_sheet(win_start, win_end, off_rows, on_rows):
+    """
+    Writes course summary report into Firestore.
+    Returns (doc_id, title).
+    """
+    base_title = f"COURSE {win_start} to {win_end}"
+    title = _make_unique_report_title(base_title, "course")
+    rows = []
+    for r in _sorted_by_band(off_rows):
+        rid,name,pres,absd,pct,band = r
+        rows.append({
+            "mode":"Offline","regid":rid,"name":name,"present":pres,"absent":absd,
+            "percent":round(pct*100,1),"band":band,"window_start":str(win_start),
+            "window_end":str(win_end),"created_at":now_ts()
+        })
+    for r in _sorted_by_band(on_rows):
+        rid,name,pres,absd,pct,band = r
+        rows.append({
+            "mode":"Online","regid":rid,"name":name,"present":pres,"absent":absd,
+            "percent":round(pct*100,1),"band":band,"window_start":str(win_start),
+            "window_end":str(win_end),"created_at":now_ts()
+        })
+    payload = {"title": title, "window_start": str(win_start), "window_end": str(win_end), "rows": rows}
+    ok = _fs_write_report("course", "course", title, payload)
+    if ok:
+        return title, title
+    return None, None
+
+def _post_public(msg_text):
+    group_id = os.getenv("REPORT_GROUP_ID","").strip()
+    topic_id = os.getenv("REPORT_TOPIC_ID","").strip()
+    if not group_id or not topic_id:
+        print("⚠️ REPORT_GROUP_ID/REPORT_TOPIC_ID not set; skipping public topic post.")
+        return
+    try:
+        bot.send_message(chat_id=int(group_id), text=_truncate_text(msg_text), message_thread_id=int(topic_id))
+    except Exception as e:
+        print("⚠️ Public post failed:", e)
+
+def _send_parent_risk_alerts(risk_list, abs_dates_map, window_label):
+    # risk_list is a list of tuples (rid, name, pres, absd, pct, band)
+    tpl = os.getenv("PARENT_RISK_MSG",
+        "⚠️ Dear Parent, your child {student_name} ({reg_id}) is at risk (≤50%) for {window_label}. Absence dates: {dates}."
+    )
+    for rid, name, pres, absd, pct, band in risk_list:
+        dates = ", ".join(abs_dates_map.get(rid, [])) or "—"
+        try:
+            msg = tpl.format(student_name=name, reg_id=rid, window_label=window_label, dates=dates)
+            notify_parent_telegram(rid, name, window_label, "risk")
+        except Exception as e:
+            print("Parent risk DM build error:", e)
+
+def send_monthly_report():
+    """
+    Auto/manual monthly report. Uses Firestore for reports & absentee storage.
+    """
+    now_local = datetime.now(ZoneInfo(TIMEZONE)).date()
+    m_first, m_last = _month_window_for(now_local)
+    win_end = m_last if now_local == m_last else now_local
+    win_start = m_first
+    risk_threshold = float(os.getenv("RISK_THRESHOLD","0.50"))
+
+    off_students = get_cached_master_list()
+    on_students  = get_cached_online_master_list()
+    off_absmap, off_classes, off_absdates = _collect_absences_between(None, "-offline", off_students, win_start, win_end)
+    on_absmap,  on_classes,  on_absdates  = _collect_absences_between(None, "-online",  on_students,  win_start, win_end)
+
+    off_block, off_detailed, _ = _build_mode_summary("Offline", off_students, off_absmap, off_classes)
+    on_block,  on_detailed,  _ = _build_mode_summary("Online",  on_students,  on_absmap,  on_classes)
+
+    def _riskify(rows):
+        out = []
+        for rid, name, pres, absd, pct, band in rows:
+            if pct <= risk_threshold:
+                out.append((rid, name, pres, absd, pct, band))
+        return out
+    risk_off = _riskify(off_detailed)
+    risk_on  = _riskify(on_detailed)
+    risk_total = len(risk_off) + len(risk_on)
+
+    # write report to Firestore
+    tab_id, tab_title = _write_monthly_sheet(win_start, win_end, off_detailed, on_detailed)
+    link = f"firestore://reports/monthly/{tab_id}" if tab_id else "reports:monthly (check Firestore)"
+
+    title = f"📅 Monthly Summary: {win_start} – {win_end}"
+    public_msg = f"{title}\n\n{off_block}\n\n{on_block}\n\n🚩 Risk Watch (≤{int(risk_threshold*100)}%): {risk_total}"
+    _post_public(public_msg)
+
+    admin_msg = public_msg + f"\n\n📄 Report: {tab_title}\n🔗 {link}"
+    if TEACHER_ID: safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:   safe_send_chat(ADMIN_ID,   admin_msg)
+
+    window_label = f"Monthly {win_start}–{win_end}"
+    _send_parent_risk_alerts(risk_off, off_absdates, window_label)
+    _send_parent_risk_alerts(risk_on,  on_absdates,  window_label)
+
+    _enforce_low_in_app({rid for rid, *_ in (risk_off + risk_on)}, win_start, win_end)
+
+    for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Monthly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Monthly",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        safe_send_chat(student["Reg ID"], msg_s)
+        if student.get("ParentChatId"):
+            safe_send_chat(student["ParentChatId"], msg_p)
+        try:
+            db.update_streak(student["Reg ID"], boost=True)
+        except Exception:
+            pass
+
+    try:
+        publish_top3_to_teacher_and_topic()
+    except Exception as e:
+        print("Monthly -> Top3 publish error (send_monthly_report):",e)
+        if ADMIN_ID:
+            safe_send_chat(ADMIN_ID, f"⚠️ Monthly Top3 publish failed: {e}")
+
+    print("✅ Monthly report done.")
+
+
+
