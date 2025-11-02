@@ -2720,5 +2720,72 @@ def send_monthly_report():
 
     print("✅ Monthly report done.")
 
+def send_course_summary_report():
+    """
+    Full-course window: from class start till today. Writes to Firestore.
+    """
+    today = datetime.now(ZoneInfo(TIMEZONE)).date()
+    start = _get_class_start_date()
+    win_start, win_end = start, today
+    risk_threshold = float(os.getenv("RISK_THRESHOLD","0.50"))
+
+    off_students = get_cached_master_list()
+    on_students  = get_cached_online_master_list()
+    off_absmap, off_classes, off_absdates = _collect_absences_between(None, "-offline", off_students, win_start, win_end)
+    on_absmap,  on_classes,  on_absdates  = _collect_absences_between(None, "-online",  on_students,  win_start, win_end)
+
+    off_block, off_detailed, _ = _build_mode_summary("Offline", off_students, off_absmap, off_classes)
+    on_block,  on_detailed,  _ = _build_mode_summary("Online",  on_students,  on_absmap,  on_classes)
+
+    def _riskify(rows):
+        return [t for t in rows if t[4] <= risk_threshold]
+    risk_off = _riskify(off_detailed)
+    risk_on  = _riskify(on_detailed)
+    risk_total = len(risk_off) + len(risk_on)
+
+    tab_id, tab_title = _write_course_sheet(win_start, win_end, off_detailed, on_detailed)
+    link = f"firestore://reports/course/{tab_id}" if tab_id else "reports:course (check Firestore)"
+
+    title = f"📘 Course Summary: {win_start} – {win_end}"
+    public_msg = f"{title}\n\n{off_block}\n\n{on_block}\n\n🚩 Risk Watch (≤{int(risk_threshold*100)}%): {risk_total}"
+    _post_public(public_msg)
+
+    admin_msg = public_msg + f"\n\n📄 Report: {tab_title}\n🔗 {link}"
+    if TEACHER_ID: safe_send_chat(TEACHER_ID, admin_msg)
+    if ADMIN_ID:   safe_send_chat(ADMIN_ID,   admin_msg)
+
+    window_label = f"Course {win_start}–{win_end}"
+    _send_parent_risk_alerts(risk_off, off_absdates, window_label)
+    _send_parent_risk_alerts(risk_on,  on_absdates,  window_label)
+
+    _enforce_low_in_app({rid for rid, *_ in (risk_off + risk_on)}, win_start, win_end)
+
+    for student in get_cached_master_list():
+        msg_s = APP_STUDENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Course Summary",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        msg_p = APP_PARENT_HIGH.format(
+            student_name=student["Name"],
+            period_type="Course Summary",
+            range_or_course=f"{win_start}–{win_end}"
+        )
+        safe_send_chat(student["Reg ID"], msg_s)
+        if student.get("ParentChatId"):
+            safe_send_chat(student["ParentChatId"], msg_p)
+        try:
+            db.update_streak(student["Reg ID"], boost=True)
+        except Exception:
+            pass
+
+    try:
+        publish_top3_to_teacher_and_topic()
+    except Exception as e:
+        print("Course Summary -> Top3 publish error:", e)
+
+    print("✅ Course summary done.")
+
+
 
 
