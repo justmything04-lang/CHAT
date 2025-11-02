@@ -2047,7 +2047,7 @@ def send_biweekly_report():
 
 
 
-this is my eod in normal version \
+this is my monthly&Course in normal version \
 
 
 # ---------------- Monthly & Course helpers (public topic + admin tab link + risk watch + parent caution) ----------------
