@@ -12,6 +12,7 @@ Google credentials:
   Set GOOGLE_CREDENTIALS_JSON to the base64-encoded contents of credentials.json.
   This script decodes it and writes credentials.json at startup.
 """
+import asyncio
 import base64
 import logging
 import os
@@ -117,8 +118,19 @@ def main() -> None:
     start_keep_alive()
 
     # ── Run the bot (long-polling, main thread) ────────────────────────────────
+    # Python 3.12+ no longer auto-creates an event loop on the main thread.
+    # Ensure one exists before run_polling() so the bot starts cleanly on any
+    # Python version Render may serve.
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
     logger.info("Bot starting in long-polling mode — running 24/7.")
-    app.run_polling(allowed_updates=["message", "callback_query"])
+    app.run_polling(
+        allowed_updates=["message", "callback_query"],
+        drop_pending_updates=True,
+    )
 
 
 if __name__ == "__main__":
