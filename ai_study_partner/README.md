@@ -199,16 +199,32 @@ python main.py
 
 ---
 
-## Deploy to Render (Free Tier)
+## Deploy to Render (Free Tier) — Always-On 24/7
+
+The bot runs as a **web service** (not a background worker) so it stays free.
+A built-in Flask server + self-ping keeps the instance from sleeping.
 
 1. Push code to GitHub
 2. Go to https://render.com → **New → Web Service**
-3. Connect your GitHub repo, set root directory to `ai_study_partner`
+3. Connect your GitHub repo, set **Root Directory** to `ai_study_partner`
 4. Build command: `pip install -r requirements.txt`
 5. Start command: `python main.py`
 6. Add all env vars from `.env.example` in the Render **Environment** tab
-7. Set `RENDER_APP_URL` = your Render service URL (e.g. `https://ai-study-partner.onrender.com`)
-8. Set `STORAGE_BACKEND=supabase` + Supabase credentials for persistent storage
+7. Deploy once → copy the URL Render gives you (e.g. `https://ai-study-partner.onrender.com`)
+8. Add `RENDER_APP_URL` = that URL → save (redeploys). This switches on the self-ping.
+9. For persistent data: set `STORAGE_BACKEND=supabase` + Supabase credentials.
+
+### Keeping it awake 24/7
+- **Built-in:** `keep_alive.py` runs a Flask server on Render's port and self-pings
+  `RENDER_APP_URL/health` every 10 min (`KEEP_ALIVE_SECONDS`) so it never goes idle.
+- **Bulletproof (recommended):** also add a free external monitor at
+  [UptimeRobot](https://uptimerobot.com) or [cron-job.org](https://cron-job.org)
+  pointing to `https://your-app.onrender.com/health` every 5 min. An external
+  monitor can even *wake* the service if it ever sleeps — a self-ping cannot.
+
+> **Note on architecture:** the bot uses long-polling (no webhook). On startup it
+> clears any existing webhook automatically, so switching from a previous webhook
+> setup is seamless.
 
 > **Important:** Render free tier has an ephemeral filesystem. With `STORAGE_BACKEND=sqlite`, data resets on every redeploy. Use `supabase` for production.
 

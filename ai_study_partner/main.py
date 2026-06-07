@@ -1,7 +1,12 @@
 """
 AI Study Partner — Entry Point
-  Local dev  : polling mode  (RENDER_APP_URL not set)
-  Production : webhook mode  (RENDER_APP_URL set in Render/Railway env vars)
+
+Runs as a 24/7 web service on Render (free tier):
+  • Flask keep-alive server holds the port open + answers health checks
+  • Self-ping every 10 min prevents the free instance from sleeping
+  • The Telegram bot itself runs in long-polling mode (no webhook needed)
+
+Works locally too — just run `python main.py` (self-ping auto-disables).
 
 Google credentials:
   Set GOOGLE_CREDENTIALS_JSON to the base64-encoded contents of credentials.json.
@@ -61,9 +66,17 @@ def main() -> None:
     from bot.notebooklm_handlers import ask, podcast, upload
     # ── Scheduler ─────────────────────────────────────────────────────────────
     from scheduler.daily_jobs import setup_scheduler
+    # ── Keep-alive web server ──────────────────────────────────────────────────
+    from keep_alive import start_keep_alive
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    app = Application.builder().token(token).build()
+
+    # Clear any leftover webhook before polling (prevents 409 Conflict)
+    async def _post_init(application: "Application") -> None:
+        await application.bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook cleared — starting long-polling.")
+
+    app = Application.builder().token(token).post_init(_post_init).build()
 
     # ── Commands ───────────────────────────────────────────────────────────────
     for cmd, fn in [
@@ -100,22 +113,12 @@ def main() -> None:
     # ── Scheduler ─────────────────────────────────────────────────────────────
     setup_scheduler(app)
 
-    # ── Run ───────────────────────────────────────────────────────────────────
-    render_url = os.getenv("RENDER_APP_URL", "").rstrip("/")
-    port = int(os.getenv("PORT", 10000))
+    # ── Start keep-alive web server (Flask + self-ping) in background ───────────
+    start_keep_alive()
 
-    if render_url:
-        logger.info("Webhook mode on port %s → %s", port, render_url)
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=token,
-            webhook_url=f"{render_url}/{token}",
-            allowed_updates=["message", "callback_query"],
-        )
-    else:
-        logger.info("Polling mode (local development)")
-        app.run_polling(allowed_updates=["message", "callback_query"])
+    # ── Run the bot (long-polling, main thread) ────────────────────────────────
+    logger.info("Bot starting in long-polling mode — running 24/7.")
+    app.run_polling(allowed_updates=["message", "callback_query"])
 
 
 if __name__ == "__main__":

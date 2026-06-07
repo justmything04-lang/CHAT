@@ -3,8 +3,10 @@ services:
     name: ai-study-partner
     env: python
     plan: free
+    rootDir: ai_study_partner
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
+    healthCheckPath: /health
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -16,3 +18,9 @@ services:
         sync: false
       - key: RENDER_APP_URL
         sync: false
+      - key: STORAGE_BACKEND
+        value: sqlite
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: KEEP_ALIVE_SECONDS
+        value: "600"

@@ -47,6 +47,7 @@ jobs:
           python -c "from bot.research_handlers import research, explain, compare, mnemonic"
           python -c "from bot.notebooklm_handlers import upload, ask, podcast"
           python -c "from scheduler.daily_jobs import setup_scheduler"
+          python -c "from keep_alive import start_keep_alive, flask_app"
           python -c "from tools.gamma_links import build_gamma_url"
           python -c "from sheets.sheet_templates import TAB_NAMES; assert len(TAB_NAMES) == 7"
           echo "✅ All imports OK — 7 sheet tabs confirmed"
