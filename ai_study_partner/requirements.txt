@@ -1,0 +1,17 @@
+python-telegram-bot[job-queue]==20.7
+google-generativeai==0.8.3
+gspread==6.0.2
+google-auth==2.29.0
+python-dotenv==1.0.1
+pytz
+requests
+flask==3.0.3
+
+# ── Optional backends — uncomment what you need ────────────────────────────
+# supabase>=2.0.0          # STORAGE_BACKEND=supabase
+
+# ── Optional — NotebookLM (unofficial) ─────────────────────────────────────
+# Install from GitHub:
+#   pip install git+https://github.com/teng-lin/notebooklm-py.git
+# Or add to requirements:
+# aiohttp==3.9.5

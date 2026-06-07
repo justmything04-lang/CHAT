@@ -1,0 +1,217 @@
+================================================================
+  AI STUDY PARTNER — COMPLETE BUILD SUMMARY
+  For review by: Sanjay V (JMT Technologies)
+  Built: June 7, 2026
+================================================================
+
+TOTAL FILES CREATED / MODIFIED: 32
+All code is in: ai_study_partner/
+
+================================================================
+  FOLDER STRUCTURE (final)
+================================================================
+
+ai_study_partner/
+├── main.py                      ← entry point
+├── requirements.txt
+├── .env.example                 ← complete env template
+├── render.yaml                  ← Render deployment config
+├── supabase_setup.sql           ← SQL to run in Supabase before using it
+│
+├── bot/
+│   ├── handlers.py              ← /start /today /done /test /stuck /progress
+│   │                              /reschedule /report /help + NLP dispatcher
+│   ├── nlp_router.py            ← keyword scan → Gemini fallback intent router
+│   ├── settings_ui.py           ← /settings inline keyboard (briefing + alerts)
+│   ├── slides_handler.py        ← /slides + Gamma deep-link + onboarding flow
+│   ├── research_handlers.py     ← /research /explain /compare /mnemonic
+│   └── notebooklm_handlers.py  ← /upload /ask /podcast (NotebookLM + fallback)
+│
+├── ai/
+│   └── gemini_client.py         ← ALL Gemini calls in one place:
+│                                  study_plan, mcq_test, evaluate_progress,
+│                                  daily_briefing, reschedule, classify_intent,
+│                                  progress_report, deep_research, explain,
+│                                  compare, mnemonic, slides_outline
+│
+├── sheets/
+│   ├── sheets_manager.py        ← create sheet (7 tabs), read/write all tabs,
+│   │                              mark_done, log_progress, add_test_result,
+│   │                              update_weak_area, log_resource, get_summary,
+│   │                              refresh_dashboard (rebuilds Tab 1)
+│   ├── dashboard_builder.py     ← builds visual Tab 1 with colour-coded cells:
+│   │                              header banner, metric cards, this week's plan,
+│   │                              weak areas table, resources section
+│   ├── snapshot.py              ← exports Tab 1 as PNG via Google Sheets API
+│   │                              → sends as photo to Telegram user
+│   └── sheet_templates.py       ← TAB_NAMES (7), column headers, colour constants
+│
+├── tools/
+│   ├── gamma_links.py           ← build Gamma deep-link URLs (URL encoding)
+│   └── notebooklm_client.py     ← NotebookLM wrapper + Gemini PDF fallback
+│
+├── scheduler/
+│   └── daily_jobs.py            ← PER-USER jobs:
+│                                  schedule_user_briefing(app, user_id, "HH:MM")
+│                                  schedule_user_inactivity(app, user_id, mode)
+│                                  setup_scheduler(app) — loads all at startup
+│
+├── storage/
+│   ├── base.py                  ← ABC: get_user, upsert_user, get_all, delete
+│   ├── factory.py               ← returns correct backend (env: STORAGE_BACKEND)
+│   ├── sqlite_store.py          ← default, zero-config, JSON blob per user
+│   ├── supabase_store.py        ← production: free 500MB Supabase tier
+│   └── gsheet_store.py          ← educational: Google Sheet as flat DB
+│
+├── state/
+│   └── session.py               ← thin wrapper — delegates to storage factory
+│
+└── data/                        ← SQLite DB + session files (auto-created)
+
+================================================================
+  GOOGLE SHEET ARCHITECTURE (7 TABS)
+================================================================
+
+Tab 1  DASHBOARD    — Visual. Auto-rebuilt by bot on every update.
+                       Metric cards: progress%, streak, days left, status
+                       Colour-coded this-week plan (green=done, blue=today)
+                       Weak areas table + resources links
+                       Bot exports Tab 1 as PNG → sends on Telegram (/progress)
+
+Tab 2  STUDY_PLAN   — AI-generated day-by-day plan. Bot reads/writes.
+Tab 3  PROGRESS_LOG — Every time student reports progress.
+Tab 4  TEST_RESULTS — Quiz scores, weak questions, retest schedule.
+Tab 5  WEAK_AREAS   — Topics flagged as difficult, priority, resources.
+Tab 6  RESOURCES    — Gamma slide links, NotebookLM, research links.
+Tab 7  SESSION      — Meta (used only by GSheet storage backend).
+
+================================================================
+  ALL BOT COMMANDS (18 total)
+================================================================
+
+Study management:
+  /start       — onboarding (name → goal → date → plan creation)
+  /today       — today's targets from sheet
+  /done        — mark topic complete
+  /stuck       — flag weak area
+  /progress    — report + Tab 1 snapshot sent as photo
+  /reschedule  — AI reshuffles remaining plan
+  /report      — weekly summary
+
+AI tools:
+  /test        — 5-question MCQ quiz, auto-scored, sheet updated
+  /research    — Sparkpage-style structured summary (Genspark replacement)
+  /explain     — plain-language explanation ≤150 words
+  /compare     — side-by-side concept comparison
+  /mnemonic    — memory tricks / acronyms
+  /slides      — Gemini outline → Gamma deep link (one-click slide deck)
+
+Material Q&A:
+  /upload      — PDF → NotebookLM notebook (Gemini fallback if unavailable)
+  /ask         — query uploaded material
+  /podcast     — audio overview MP3 (NotebookLM only)
+
+Settings:
+  /settings    — inline keyboard: change briefing time, alert frequency, reset
+  /help        — full command list
+
+Natural language also works for all common actions.
+
+================================================================
+  CONFIGURABLE BY USER FROM TELEGRAM (inline keyboard)
+================================================================
+
+  Briefing time:     any HH:MM  (default 08:00, per user's timezone)
+  Inactivity alert:  Hourly / Daily / Every 2 Days / Weekly / Never
+  Reset all data:    with confirmation step
+  View sheet:        direct link to their Google Sheet
+
+================================================================
+  STORAGE BACKENDS
+================================================================
+
+  sqlite    — default, zero-config. ⚠️ resets on Render redeploy.
+  supabase  — production. Free 500 MB. Run supabase_setup.sql first.
+  gsheet    — educational. Uses a Google Sheet as flat DB.
+
+  Switch via: STORAGE_BACKEND=sqlite|supabase|gsheet  in .env
+
+================================================================
+  DEPLOYMENT — RENDER
+================================================================
+
+  1. Push to GitHub
+  2. Render → New Web Service → connect repo
+  3. Root: ai_study_partner
+  4. Build: pip install -r requirements.txt
+  5. Start: python main.py
+  6. Add all env vars from .env.example
+  7. Set RENDER_APP_URL = your Render URL
+  8. Recommended: STORAGE_BACKEND=supabase (persistent across deploys)
+
+  Bot auto-detects: RENDER_APP_URL set → webhook mode
+                    not set → polling mode (local dev)
+
+================================================================
+  QUICK LOCAL CHECK RUN
+================================================================
+
+  Step 1 — Install:
+    cd ai_study_partner
+    pip install -r requirements.txt
+
+  Step 2 — Syntax check (no env vars needed):
+    python -m py_compile $(find . -name '*.py' | xargs)
+
+  Step 3 — Copy .env and fill in at minimum:
+    cp .env.example .env
+    # Fill: TELEGRAM_BOT_TOKEN, GEMINI_API_KEY
+    # Place credentials.json in ai_study_partner/
+    # Set SHEET_SHARE_EMAIL
+
+  Step 4 — Run locally (polling mode):
+    python main.py
+
+  Step 5 — Open Telegram → message your bot:
+    /start  → onboarding begins
+    /help   → see all commands
+
+================================================================
+  GITHUB ACTIONS CI
+================================================================
+
+  File: .github/workflows/ci.yml
+  Triggers: push/PR to ai_study_partner/**
+
+  Jobs:
+    1. Syntax check — all .py files
+    2. Import check — all modules without calling APIs
+    3. Asserts 7 sheet tabs are defined
+
+================================================================
+  PROJECT IS SELF-CONTAINED IN: ai_study_partner/
+================================================================
+
+  ai_study_partner/LICENSE           — MIT, Copyright 2026 Sanjay V / JMT
+  ai_study_partner/README.md         — Full documentation with setup guide
+  ai_study_partner/WHAT_WAS_DONE.txt — This file
+  ai_study_partner/.gitignore        — ignores .env, credentials.json, *.pyc
+
+  Only file kept at repo root (GitHub requires it there):
+  .github/workflows/ci.yml           — GitHub Actions CI (paths: ai_study_partner/**)
+
+================================================================
+  WHAT STILL NEEDS MANUAL SETUP (cannot be automated)
+================================================================
+
+  1. Telegram bot token  → @BotFather → /newbot
+  2. Gemini API key      → aistudio.google.com/apikey
+  3. Google credentials  → console.cloud.google.com:
+       - Create project
+       - Enable Google Sheets API + Google Drive API
+       - Create Service Account → download credentials.json
+  4. Supabase (optional) → supabase.com → run supabase_setup.sql
+  5. Gamma account       → gamma.app (free) — for /slides command
+  6. NotebookLM (opt.)   → pip install git+https://github.com/teng-lin/notebooklm-py
+
+================================================================
