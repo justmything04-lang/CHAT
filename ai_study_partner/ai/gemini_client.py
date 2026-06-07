@@ -1,20 +1,29 @@
 """
-All Gemini AI calls.
-Model: gemini-2.0-flash  (free-tier; change to gemini-2.0-flash-lite for lower quota usage)
+All Gemini AI calls — uses the current google-genai SDK (replaces deprecated google-generativeai).
+Model: gemini-2.0-flash  (free-tier; swap to gemini-2.5-flash for better reasoning)
 """
 import json
 import logging
 import os
 
-import google.generativeai as genai
+from google import genai as _genai
 
 logger = logging.getLogger(__name__)
 _MODEL = "gemini-2.0-flash"
 
+_client: "_genai.Client | None" = None
 
-def _model():
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    return genai.GenerativeModel(_MODEL)
+
+def _get_client() -> "_genai.Client":
+    global _client
+    if _client is None:
+        _client = _genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    return _client
+
+
+def _generate(prompt: str) -> str:
+    resp = _get_client().models.generate_content(model=_MODEL, contents=prompt)
+    return resp.text
 
 
 def _parse_json(text: str):
@@ -38,7 +47,7 @@ def create_study_plan(student_name: str, goal: str, start_date: str, end_date: s
         "Be realistic. Include revision days. Return ONLY valid JSON — no markdown.\n\n"
         f"Student: {student_name}\nGoal: {goal}\nStart: {start_date}\nTarget: {end_date}"
     )
-    return _parse_json(_model().generate_content(prompt).text)
+    return _parse_json(_generate(prompt))
 
 
 # ─── MCQ Test ─────────────────────────────────────────────────────────────────
@@ -52,7 +61,7 @@ def generate_mcq_test(topic: str, subject: str = "General") -> list:
         '"correct_answer": "A"|"B"|"C"|"D", "explanation": str}\n'
         "Exam-level difficulty. Return ONLY valid JSON."
     )
-    return _parse_json(_model().generate_content(prompt).text)
+    return _parse_json(_generate(prompt))
 
 
 # ─── Progress Evaluation ──────────────────────────────────────────────────────
@@ -65,7 +74,7 @@ def evaluate_progress(user_message: str, plan_summary: str, todays_topics: str) 
         '{"topics_done": [], "topics_struggled": [], '
         '"mood_detected": str, "plan_adjustment_needed": bool, "motivational_message": str}'
     )
-    return _parse_json(_model().generate_content(prompt).text)
+    return _parse_json(_generate(prompt))
 
 
 # ─── Daily Briefing ───────────────────────────────────────────────────────────
@@ -79,7 +88,7 @@ def generate_daily_briefing(name: str, goal: str, topics: str,
         f"Weak areas: {weak_areas}\n"
         "Write a SHORT motivating briefing (max 100 words). Use emojis. Be specific."
     )
-    return _model().generate_content(prompt).text.strip()
+    return _generate(prompt).strip()
 
 
 # ─── Reschedule ───────────────────────────────────────────────────────────────
@@ -91,7 +100,7 @@ def reschedule_plan(remaining: list, days_left: int, days_missed: int, weak_area
         "Redistribute into a new day-by-day plan.\n"
         "Return ONLY valid JSON array with keys: day, date, topic, subtopics, estimated_hours, difficulty, notes"
     )
-    return _parse_json(_model().generate_content(prompt).text)
+    return _parse_json(_generate(prompt))
 
 
 # ─── Intent Classification ────────────────────────────────────────────────────
@@ -104,7 +113,7 @@ def classify_intent(message: str) -> dict:
         'Return JSON: {"intent": "...", "topic": "extracted topic or null", "confidence": 0.0-1.0}'
     )
     try:
-        return _parse_json(_model().generate_content(prompt).text)
+        return _parse_json(_generate(prompt))
     except Exception:
         return {"intent": "UNKNOWN", "topic": None, "confidence": 0.0}
 
@@ -118,10 +127,10 @@ def generate_progress_report(name: str, goal: str, done: int, total: int, weak_a
         f"Progress: {done}/{total} ({pct}%) | Weak areas: {json.dumps(weak_areas[:5])}\n"
         "Write an honest, encouraging report with specific next-step advice. Max 200 words. Use emojis."
     )
-    return _model().generate_content(prompt).text.strip()
+    return _generate(prompt).strip()
 
 
-# ─── Deep Research (Genspark replacement) ────────────────────────────────────
+# ─── Deep Research ────────────────────────────────────────────────────────────
 
 def deep_research(topic: str, exam_level: str = "exam") -> str:
     prompt = (
@@ -135,7 +144,7 @@ def deep_research(topic: str, exam_level: str = "exam") -> str:
         "⚠️ *COMMON MISTAKES* — 2 things students often get wrong\n\n"
         "Keep total under 400 words. Use simple language. Format for Telegram."
     )
-    return _model().generate_content(prompt).text.strip()
+    return _generate(prompt).strip()
 
 
 def explain_concept(topic: str) -> str:
@@ -143,7 +152,7 @@ def explain_concept(topic: str) -> str:
         f"Explain '{topic}' in plain language for a student. "
         "Under 150 words. No jargon. Use a simple real-life example."
     )
-    return _model().generate_content(prompt).text.strip()
+    return _generate(prompt).strip()
 
 
 def compare_concepts(a: str, b: str) -> str:
@@ -154,7 +163,7 @@ def compare_concepts(a: str, b: str) -> str:
         "• Key differences (3 points)\n• When to use each\n"
         "Keep it under 200 words. Simple language."
     )
-    return _model().generate_content(prompt).text.strip()
+    return _generate(prompt).strip()
 
 
 def generate_mnemonic(topic: str) -> str:
@@ -162,7 +171,7 @@ def generate_mnemonic(topic: str) -> str:
         f"Create a memory trick (mnemonic, acronym, or story) to remember: '{topic}'\n"
         "Make it catchy, simple, and exam-relevant. Under 100 words."
     )
-    return _model().generate_content(prompt).text.strip()
+    return _generate(prompt).strip()
 
 
 # ─── Slides Outline (for Gamma deep link) ────────────────────────────────────
@@ -175,4 +184,4 @@ def generate_slides_outline(topic: str, goal: str = "") -> str:
         "Keep it concise — this text will be URL-encoded into a Gamma link.\n"
         "No special characters except basic punctuation. Under 600 words."
     )
-    return _model().generate_content(prompt).text.strip()
+    return _generate(prompt).strip()

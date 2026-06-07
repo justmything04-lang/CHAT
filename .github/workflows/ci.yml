@@ -50,4 +50,5 @@ jobs:
           python -c "from keep_alive import start_keep_alive, flask_app"
           python -c "from tools.gamma_links import build_gamma_url"
           python -c "from sheets.sheet_templates import TAB_NAMES; assert len(TAB_NAMES) == 7"
+          python -c "from ai.gemini_client import create_study_plan"
           echo "✅ All imports OK — 7 sheet tabs confirmed"
