@@ -364,43 +364,63 @@ async def _handle_onboarding(update, context, user_id: int,
             "⚙️ Creating your personalised study plan and Google Sheet…\n"
             "This takes about 30-60 seconds — please wait! ⏳"
         )
+        name = user_data.get("name", "Student")
+        goal = user_data.get("goal", "Study Goal")
+        start_date = datetime.now().strftime("%Y-%m-%d")
+
+        # Step 1 — AI study plan
         try:
-            name = user_data.get("name", "Student")
-            goal = user_data.get("goal", "Study Goal")
-            start_date = datetime.now().strftime("%Y-%m-%d")
-
             plan = create_study_plan(name, goal, start_date, end_date)
-            sheet_id, sheet_url = create_study_sheet(name, goal, start_date, end_date)
-            write_study_plan(sheet_id, plan)
-
-            update_user(user_id, {
-                "sheet_id": sheet_id,
-                "sheet_url": sheet_url,
-                "start_date": start_date,
-                "briefing_time": "08:00",
-                "inactivity_mode": "2days",
-                "onboarding_step": "complete",
-            })
-
-            # Schedule per-user jobs immediately
-            schedule_user_briefing(context.application, user_id, "08:00")
-            schedule_user_inactivity(context.application, user_id, "2days")
-
-            await update.message.reply_text(
-                f"🎉 *All set, {name}!*\n\n"
-                f"📋 Study plan: *{len(plan)} days*\n"
-                f"📊 Google Sheet: {sheet_url}\n\n"
-                "I'll send you a briefing every morning at 8:00 AM.\n"
-                "Change this anytime with /settings\n\n"
-                "Use /today to see your first targets! 🚀",
-                parse_mode="Markdown",
-            )
         except Exception as exc:
-            logger.error("Onboarding failed: %s", exc)
+            logger.error("Gemini plan creation failed: %s", exc, exc_info=True)
             update_user(user_id, {"onboarding_step": "awaiting_end_date"})
             await update.message.reply_text(
-                "❌ Something went wrong. Please re-enter your target date to try again."
+                "❌ AI plan creation failed.\n\n"
+                "Check that your *GEMINI_API_KEY* is valid in Render → Environment.\n"
+                "Then re-enter your target date to retry.",
+                parse_mode="Markdown",
             )
+            return
+
+        # Step 2 — Google Sheet
+        try:
+            sheet_id, sheet_url = create_study_sheet(name, goal, start_date, end_date)
+            write_study_plan(sheet_id, plan)
+        except Exception as exc:
+            logger.error("Google Sheets setup failed: %s", exc, exc_info=True)
+            update_user(user_id, {"onboarding_step": "awaiting_end_date"})
+            await update.message.reply_text(
+                "❌ Google Sheet creation failed.\n\n"
+                "Make sure:\n"
+                "• *GOOGLE_CREDENTIALS_JSON* is set to your *new* (un-revoked) service account key\n"
+                "• *Google Sheets API* and *Google Drive API* are enabled in Google Cloud Console\n\n"
+                "Re-enter your target date to retry once fixed.",
+                parse_mode="Markdown",
+            )
+            return
+
+        update_user(user_id, {
+            "sheet_id": sheet_id,
+            "sheet_url": sheet_url,
+            "start_date": start_date,
+            "briefing_time": "08:00",
+            "inactivity_mode": "2days",
+            "onboarding_step": "complete",
+        })
+
+        # Schedule per-user jobs immediately
+        schedule_user_briefing(context.application, user_id, "08:00")
+        schedule_user_inactivity(context.application, user_id, "2days")
+
+        await update.message.reply_text(
+            f"🎉 *All set, {name}!*\n\n"
+            f"📋 Study plan: *{len(plan)} days*\n"
+            f"📊 Google Sheet: {sheet_url}\n\n"
+            "I'll send you a briefing every morning at 8:00 AM.\n"
+            "Change this anytime with /settings\n\n"
+            "Use /today to see your first targets! 🚀",
+            parse_mode="Markdown",
+        )
 
 
 # ─── Settings text input ──────────────────────────────────────────────────────

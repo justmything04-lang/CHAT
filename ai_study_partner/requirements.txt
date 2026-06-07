@@ -1,7 +1,7 @@
 python-telegram-bot[job-queue]==21.9
-google-generativeai==0.8.3
+google-genai>=1.0.0
 gspread==6.0.2
-google-auth==2.29.0
+google-auth>=2.29.0
 python-dotenv==1.0.1
 pytz
 requests
