@@ -8,6 +8,8 @@ services:
     startCommand: python main.py
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: GEMINI_API_KEY
