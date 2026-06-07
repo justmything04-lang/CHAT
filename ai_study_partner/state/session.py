@@ -1,48 +1,25 @@
 """
-Lightweight JSON-file session store.
-Each Telegram user_id maps to a dict of user state.
+Public session API — all callers use these functions.
+The actual storage backend is swapped via STORAGE_BACKEND env var.
 """
-import json
-import os
-from datetime import datetime
-from typing import Optional, Dict, Any
-
-_DATA_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "users.json")
+from typing import Any, Dict, Optional
+from storage.factory import get_store
 
 
-def _load() -> Dict[str, Any]:
-    os.makedirs(os.path.dirname(_DATA_FILE), exist_ok=True)
-    if not os.path.exists(_DATA_FILE):
-        return {}
-    try:
-        with open(_DATA_FILE, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
+def get_user(user_id: int) -> Optional[Dict[str, Any]]:
+    return get_store().get_user(user_id)
 
 
-def _save(users: Dict[str, Any]) -> None:
-    os.makedirs(os.path.dirname(_DATA_FILE), exist_ok=True)
-    with open(_DATA_FILE, "w") as f:
-        json.dump(users, f, indent=2, default=str)
+def update_user(user_id: int, updates: Dict[str, Any]) -> None:
+    get_store().upsert_user(user_id, updates)
 
 
-def get_user(user_id: int) -> Optional[Dict]:
-    return _load().get(str(user_id))
+def delete_user(user_id: int) -> None:
+    get_store().delete_user(user_id)
 
 
-def update_user(user_id: int, updates: Dict) -> None:
-    users = _load()
-    uid = str(user_id)
-    if uid not in users:
-        users[uid] = {}
-    users[uid].update(updates)
-    users[uid]["last_active"] = datetime.now().isoformat()
-    _save(users)
-
-
-def get_all_users() -> Dict[str, Any]:
-    return _load()
+def get_all_users() -> Dict[str, Dict[str, Any]]:
+    return get_store().get_all_users()
 
 
 def is_onboarded(user_id: int) -> bool:

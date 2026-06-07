@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - 'ai_study_partner/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'ai_study_partner/**'
+
+jobs:
+  check:
+    name: Syntax & Import Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r ai_study_partner/requirements.txt
+
+      - name: Syntax check — all Python files
+        run: |
+          find ai_study_partner -name '*.py' -print0 \
+            | xargs -0 python -m py_compile
+          echo "✅ All files pass syntax check"
+
+      - name: Import check
+        env:
+          STORAGE_BACKEND: sqlite
+          TELEGRAM_BOT_TOKEN: dummy_token_for_ci
+          GEMINI_API_KEY: dummy_key_for_ci
+          TIMEZONE: UTC
+        run: |
+          cd ai_study_partner
+          python -c "from state.session import get_user, is_onboarded"
+          python -c "from storage.factory import get_store"
+          python -c "from storage.sqlite_store import SQLiteStore"
+          python -c "from bot.nlp_router import route_message"
+          python -c "from bot.settings_ui import settings_cmd, handle_settings_callback"
+          python -c "from bot.slides_handler import slides"
+          python -c "from bot.research_handlers import research, explain, compare, mnemonic"
+          python -c "from bot.notebooklm_handlers import upload, ask, podcast"
+          python -c "from scheduler.daily_jobs import setup_scheduler"
+          python -c "from tools.gamma_links import build_gamma_url"
+          python -c "from sheets.sheet_templates import TAB_NAMES; assert len(TAB_NAMES) == 7"
+          echo "✅ All imports OK — 7 sheet tabs confirmed"

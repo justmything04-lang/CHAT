@@ -1,15 +1,15 @@
 """
 AI Study Partner — Entry Point
-  Local dev  : runs in polling mode  (no RENDER_APP_URL set)
-  Production : runs in webhook mode  (RENDER_APP_URL set in Render env vars)
+  Local dev  : polling mode  (RENDER_APP_URL not set)
+  Production : webhook mode  (RENDER_APP_URL set in Render/Railway env vars)
 
 Google credentials:
-  Set GOOGLE_CREDENTIALS_JSON to the base64-encoded contents of credentials.json
+  Set GOOGLE_CREDENTIALS_JSON to the base64-encoded contents of credentials.json.
   This script decodes it and writes credentials.json at startup.
 """
-import os
 import base64
 import logging
+import os
 
 from dotenv import load_dotenv
 
@@ -23,72 +23,99 @@ logger = logging.getLogger(__name__)
 
 
 def _write_google_credentials() -> None:
-    """Decode GOOGLE_CREDENTIALS_JSON (base64) and write to credentials.json."""
     raw = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
     if not raw:
-        logger.warning("GOOGLE_CREDENTIALS_JSON is not set — Google Sheets will fail.")
+        logger.warning("GOOGLE_CREDENTIALS_JSON not set — Google Sheets will fail.")
         return
-
     creds_path = os.path.join(os.path.dirname(__file__), "credentials.json")
     if os.path.exists(creds_path):
-        return  # already present (local dev with real file)
-
+        return
     try:
         decoded = base64.b64decode(raw).decode("utf-8")
     except Exception:
-        decoded = raw  # already plain JSON
-
+        decoded = raw
     with open(creds_path, "w") as fh:
         fh.write(decoded)
-    logger.info("credentials.json written from GOOGLE_CREDENTIALS_JSON env var.")
+    logger.info("credentials.json written from env var.")
 
 
 def main() -> None:
     _write_google_credentials()
 
-    # Import after credentials are in place
-    from telegram.ext import Application, CommandHandler, MessageHandler, filters
-    from bot.handlers import (
-        start, today, done, test, progress, stuck,
-        reschedule, report, help_cmd, handle_message,
+    from telegram.ext import (
+        Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters,
     )
+
+    # ── Core handlers ──────────────────────────────────────────────────────────
+    from bot.handlers import (
+        done, help_cmd, handle_message, progress, report,
+        reschedule, start, stuck, test, today,
+    )
+    # ── Settings inline UI ─────────────────────────────────────────────────────
+    from bot.settings_ui import handle_settings_callback, settings_cmd
+    # ── Slides / Gamma ─────────────────────────────────────────────────────────
+    from bot.slides_handler import handle_gamma_callback, slides
+    # ── Deep research ──────────────────────────────────────────────────────────
+    from bot.research_handlers import compare, explain, mnemonic, research
+    # ── NotebookLM ─────────────────────────────────────────────────────────────
+    from bot.notebooklm_handlers import ask, podcast, upload
+    # ── Scheduler ─────────────────────────────────────────────────────────────
     from scheduler.daily_jobs import setup_scheduler
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     app = Application.builder().token(token).build()
 
-    # ── Command handlers ────────────────────────────────────────────────────
-    app.add_handler(CommandHandler("start",      start))
-    app.add_handler(CommandHandler("today",      today))
-    app.add_handler(CommandHandler("done",       done))
-    app.add_handler(CommandHandler("test",       test))
-    app.add_handler(CommandHandler("progress",   progress))
-    app.add_handler(CommandHandler("stuck",      stuck))
-    app.add_handler(CommandHandler("reschedule", reschedule))
-    app.add_handler(CommandHandler("report",     report))
-    app.add_handler(CommandHandler("help",       help_cmd))
+    # ── Commands ───────────────────────────────────────────────────────────────
+    for cmd, fn in [
+        ("start",      start),
+        ("today",      today),
+        ("done",       done),
+        ("test",       test),
+        ("progress",   progress),
+        ("stuck",      stuck),
+        ("reschedule", reschedule),
+        ("report",     report),
+        ("help",       help_cmd),
+        ("settings",   settings_cmd),
+        ("slides",     slides),
+        ("research",   research),
+        ("explain",    explain),
+        ("compare",    compare),
+        ("mnemonic",   mnemonic),
+        ("upload",     upload),
+        ("ask",        ask),
+        ("podcast",    podcast),
+    ]:
+        app.add_handler(CommandHandler(cmd, fn))
 
-    # ── Natural language handler ─────────────────────────────────────────────
+    # ── Inline callback handlers ───────────────────────────────────────────────
+    app.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r"^settings:"))
+    app.add_handler(CallbackQueryHandler(handle_gamma_callback,    pattern=r"^gamma:"))
+
+    # ── Natural language (catch-all text) ──────────────────────────────────────
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # ── Document handler (for /upload PDF) ────────────────────────────────────
+    app.add_handler(MessageHandler(filters.Document.PDF, upload))
 
-    # ── Scheduled jobs ───────────────────────────────────────────────────────
+    # ── Scheduler ─────────────────────────────────────────────────────────────
     setup_scheduler(app)
 
-    # ── Run ──────────────────────────────────────────────────────────────────
+    # ── Run ───────────────────────────────────────────────────────────────────
     render_url = os.getenv("RENDER_APP_URL", "").rstrip("/")
     port = int(os.getenv("PORT", 10000))
 
     if render_url:
-        logger.info("Webhook mode — listening on port %s", port)
+        logger.info("Webhook mode on port %s → %s", port, render_url)
         app.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path=token,
             webhook_url=f"{render_url}/{token}",
+            allowed_updates=["message", "callback_query"],
         )
     else:
         logger.info("Polling mode (local development)")
-        app.run_polling(allowed_updates=["message"])
+        app.run_polling(allowed_updates=["message", "callback_query"])
 
 
 if __name__ == "__main__":
