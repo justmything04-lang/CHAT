@@ -189,15 +189,16 @@ Natural language also works for all common actions.
     3. Asserts 7 sheet tabs are defined
 
 ================================================================
-  FILES ADDED TO REPO ROOT
+  PROJECT IS SELF-CONTAINED IN: ai_study_partner/
 ================================================================
 
-  LICENSE          — MIT, Copyright 2026 Sanjay V / JMT Technologies
-  README.md        — Full documentation with setup guide
-  WHAT_WAS_DONE.txt — This file
-  .github/
-    workflows/
-      ci.yml       — GitHub Actions CI
+  ai_study_partner/LICENSE           — MIT, Copyright 2026 Sanjay V / JMT
+  ai_study_partner/README.md         — Full documentation with setup guide
+  ai_study_partner/WHAT_WAS_DONE.txt — This file
+  ai_study_partner/.gitignore        — ignores .env, credentials.json, *.pyc
+
+  Only file kept at repo root (GitHub requires it there):
+  .github/workflows/ci.yml           — GitHub Actions CI (paths: ai_study_partner/**)
 
 ================================================================
   WHAT STILL NEEDS MANUAL SETUP (cannot be automated)

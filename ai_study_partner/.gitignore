@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Secrets — NEVER commit these
+.env
+credentials.json
+notebooklm_session/
+
+# Local data (SQLite DB, session files)
+data/*.db
+data/users.json
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
