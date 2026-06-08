@@ -374,11 +374,23 @@ async def _handle_onboarding(update, context, user_id: int,
         except Exception as exc:
             logger.error("Gemini plan creation failed: %s", exc, exc_info=True)
             update_user(user_id, {"onboarding_step": "awaiting_end_date"})
-            await update.message.reply_text(
-                f"❌ *Gemini error:*\n`{str(exc)[:300]}`\n\n"
-                "Re-enter your target date to retry.",
-                parse_mode="Markdown",
-            )
+            err = str(exc)
+            if "429" in err or "RESOURCE_EXHAUSTED" in err or "quota" in err.lower():
+                msg = (
+                    "⏳ *AI is rate-limited* (Gemini free-tier quota hit).\n\n"
+                    "• Wait ~1 minute and re-enter your date to retry.\n"
+                    "• If it keeps failing, the *daily* free limit is used up — "
+                    "enable billing on your Google Cloud project (Flash costs ~cents) "
+                    "or try again tomorrow.\n"
+                    "• Or switch to a lighter model via the `GEMINI_MODEL` env var "
+                    "(e.g. `gemini-2.0-flash-lite`)."
+                )
+            else:
+                msg = (
+                    f"❌ *Gemini error:*\n`{err[:300]}`\n\n"
+                    "Re-enter your target date to retry."
+                )
+            await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
         # Step 2 — Google Sheet
