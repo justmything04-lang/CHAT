@@ -165,19 +165,46 @@ pip install -r requirements.txt
 1. Go to https://aistudio.google.com/apikey
 2. Sign in → Create API Key → copy
 
-### Step 4 — Google Sheets API
-1. Go to https://console.cloud.google.com
-2. Create project → Enable **Google Sheets API** + **Google Drive API**
-3. Go to Credentials → Create Service Account → create key → download `credentials.json`
-4. Copy the service account email from the JSON file
+### Step 4 — Google Sheets access
+
+Enable the APIs first (both required):
+1. Go to https://console.cloud.google.com → create/select a project
+2. Enable **Google Sheets API** + **Google Drive API**
+
+Then pick **one** auth method:
+
+#### Option A (recommended for a personal Gmail) — OAuth user token
+
+A service account has **no Drive storage**, so it can't create sheets on a
+personal Gmail (`storageQuotaExceeded`) — and sharing a folder does **not** fix
+it. Instead, authorize the bot to use *your* account (free 15 GB quota):
+
+1. Cloud Console → **OAuth consent screen** → External → add your Gmail as a **Test user**
+2. **Credentials → Create Credentials → OAuth client ID → Desktop app** → download JSON
+3. Save it as `ai_study_partner/client_secret.json`
+4. Run it once on your computer:
+   ```bash
+   pip install gspread
+   python generate_oauth_token.py     # browser opens → sign in → Allow
+   ```
+5. Copy the printed value into `GOOGLE_OAUTH_TOKEN` (in `.env` / Render).
+
+> Every study sheet is then created in, and owned by, your own Drive.
+
+#### Option B — Service account (Google Workspace **Shared Drive** only)
+
+1. Credentials → Create Service Account → create key → download `credentials.json`
+2. Set `GOOGLE_CREDENTIALS_JSON` (see below). On a personal Gmail this only
+   works if you create inside a Shared Drive (Workspace feature).
 
 ### Step 5 — Create .env
 ```bash
 cp .env.example .env
-# Fill in: TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GOOGLE_CREDENTIALS_JSON, SHEET_SHARE_EMAIL
+# Personal Gmail: fill TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GOOGLE_OAUTH_TOKEN
+# Workspace SA:   fill TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GOOGLE_CREDENTIALS_JSON
 ```
 
-For `GOOGLE_CREDENTIALS_JSON`, base64-encode your credentials file:
+For `GOOGLE_CREDENTIALS_JSON` (Option B only), base64-encode the file:
 ```bash
 # Linux/Mac:
 base64 -i credentials.json | tr -d '\n'

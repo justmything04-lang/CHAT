@@ -383,7 +383,7 @@ async def _handle_onboarding(update, context, user_id: int,
                     "enable billing on your Google Cloud project (Flash costs ~cents) "
                     "or try again tomorrow.\n"
                     "• Or switch to a lighter model via the `GEMINI_MODEL` env var "
-                    "(e.g. `gemini-2.0-flash-lite`)."
+                    "(e.g. `gemini-2.5-flash-lite`)."
                 )
             else:
                 msg = (
@@ -404,13 +404,14 @@ async def _handle_onboarding(update, context, user_id: int,
             low = err.lower()
             if "storagequota" in low or "storage quota" in low:
                 msg = (
-                    "❌ *Sheet failed — service-account storage quota.*\n\n"
-                    "Service accounts can't store files on a personal Gmail. Fix:\n"
-                    "1. Create a folder in *your* Google Drive\n"
-                    "2. Share it (Editor) with your service-account email\n"
-                    "3. Open the folder — copy the ID from the URL\n"
-                    "4. Set `GDRIVE_FOLDER_ID` in Render to that ID\n\n"
-                    "Then re-enter your target date."
+                    "❌ *Sheet failed — service accounts have no Drive storage.*\n\n"
+                    "On a personal Gmail this can't be fixed with a folder — Google "
+                    "blocks it by design.\n\n"
+                    "*Real fix (free, 5 min):* let the bot use YOUR Google account.\n"
+                    "1. On your computer, run `generate_oauth_token.py`\n"
+                    "2. It prints a `GOOGLE_OAUTH_TOKEN` value\n"
+                    "3. Add that in Render → Environment → Manual Deploy\n\n"
+                    "Step-by-step is in the README. Then re-enter your target date."
                 )
             elif "disabled" in low or "has not been used" in low or "service_disabled" in low:
                 msg = (
