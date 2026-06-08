@@ -36,12 +36,20 @@ def _col(n: int) -> str:
 def create_study_sheet(student_name: str, goal: str,
                         start_date: str, end_date: str) -> tuple[str, str]:
     gc = _client()
-    ss = gc.create(f"AI Study Partner — {student_name}")
+    # Creating inside a user-owned folder (shared with the service account)
+    # avoids the service-account "storageQuotaExceeded" error on personal Gmail.
+    folder_id = os.getenv("GDRIVE_FOLDER_ID", "").strip() or None
+    ss = gc.create(f"AI Study Partner — {student_name}", folder_id=folder_id)
     ss.share(None, perm_type="anyone", role="reader")
 
-    admin_email = os.getenv("SHEET_SHARE_EMAIL")
+    # Share with the admin's real email so they can see/edit it. Never fatal —
+    # a wrong/own-SA email must not break onboarding.
+    admin_email = os.getenv("SHEET_SHARE_EMAIL", "").strip()
     if admin_email:
-        ss.share(admin_email, perm_type="user", role="writer")
+        try:
+            ss.share(admin_email, perm_type="user", role="writer")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not share with SHEET_SHARE_EMAIL=%s: %s", admin_email, exc)
 
     ws_dash = ss.get_worksheet(0)
     ws_dash.update_title(TAB_NAMES[0])
