@@ -5,11 +5,13 @@ Model: gemini-2.0-flash  (free-tier; swap to gemini-2.5-flash for better reasoni
 import json
 import logging
 import os
+import time
 
 from google import genai as _genai
 
 logger = logging.getLogger(__name__)
-_MODEL = "gemini-2.0-flash"
+_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+_MAX_RETRIES = 3
 
 _client: "_genai.Client | None" = None
 
@@ -21,9 +23,26 @@ def _get_client() -> "_genai.Client":
     return _client
 
 
+def _is_rate_limit(exc: Exception) -> bool:
+    s = str(exc)
+    return "429" in s or "RESOURCE_EXHAUSTED" in s or "quota" in s.lower()
+
+
 def _generate(prompt: str) -> str:
-    resp = _get_client().models.generate_content(model=_MODEL, contents=prompt)
-    return resp.text
+    last_exc: "Exception | None" = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            resp = _get_client().models.generate_content(model=_MODEL, contents=prompt)
+            return resp.text
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if _is_rate_limit(exc) and attempt < _MAX_RETRIES - 1:
+                wait = 3 * (attempt + 1)  # 3s, then 6s
+                logger.warning("Gemini rate-limited — retrying in %ss", wait)
+                time.sleep(wait)
+                continue
+            raise
+    raise last_exc  # pragma: no cover
 
 
 def _parse_json(text: str):
