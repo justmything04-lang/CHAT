@@ -16,7 +16,11 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      - key: GOOGLE_OAUTH_TOKEN
+        sync: false
       - key: GOOGLE_CREDENTIALS_JSON
+        sync: false
+      - key: GDRIVE_FOLDER_ID
         sync: false
       - key: SHEET_SHARE_EMAIL
         sync: false

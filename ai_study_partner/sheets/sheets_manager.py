@@ -1,6 +1,16 @@
 """
-All Google Sheets read/write operations — gspread 6.x with service-account auth.
+All Google Sheets read/write operations — gspread 6.x.
+
+Auth (in priority order):
+  1. OAuth USER credentials  (GOOGLE_OAUTH_TOKEN) — REQUIRED for personal Gmail.
+     Sheets are owned by your account and use your free 15 GB Drive quota.
+  2. Service account         (credentials.json)   — Workspace Shared Drives only.
+     Service accounts have ZERO storage, so creating files on a personal Gmail
+     always fails with storageQuotaExceeded (a Drive folder does NOT fix this).
 """
+import base64
+import binascii
+import json
 import logging
 import os
 from datetime import datetime, timedelta
@@ -16,10 +26,38 @@ from sheets.sheet_templates import (
 
 logger = logging.getLogger(__name__)
 
+_cached_client: "gspread.Client | None" = None
+
+
+def _decode_json_env(value: str) -> dict:
+    """Accept either raw JSON or base64-encoded JSON and return a dict."""
+    value = value.strip()
+    if value.startswith("{"):
+        return json.loads(value)
+    try:
+        return json.loads(base64.b64decode(value).decode("utf-8"))
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return json.loads(value)  # last resort: treat as raw JSON
+
 
 def _client() -> gspread.Client:
+    """Authorized gspread client (OAuth user creds preferred, SA as fallback)."""
+    global _cached_client
+    if _cached_client is not None:
+        return _cached_client
+
+    token_env = os.getenv("GOOGLE_OAUTH_TOKEN", "").strip()
+    if token_env:
+        authorized_user = _decode_json_env(token_env)
+        gc, _ = gspread.oauth_from_dict(authorized_user_info=authorized_user)
+        logger.info("gspread authorized via OAuth user credentials")
+        _cached_client = gc
+        return _cached_client
+
     creds_file = os.path.join(os.path.dirname(__file__), "..", "credentials.json")
-    return gspread.service_account(filename=creds_file)
+    _cached_client = gspread.service_account(filename=creds_file)
+    logger.info("gspread authorized via service account (Workspace Shared Drive only)")
+    return _cached_client
 
 
 def _col(n: int) -> str:
@@ -36,14 +74,16 @@ def _col(n: int) -> str:
 def create_study_sheet(student_name: str, goal: str,
                         start_date: str, end_date: str) -> tuple[str, str]:
     gc = _client()
-    # Creating inside a user-owned folder (shared with the service account)
-    # avoids the service-account "storageQuotaExceeded" error on personal Gmail.
+    # Optional: drop the sheet into a specific folder (handy for keeping your
+    # Drive tidy). With OAuth user creds the file is owned by you, so this works
+    # on personal Gmail; with a service account it only helps on a Shared Drive.
     folder_id = os.getenv("GDRIVE_FOLDER_ID", "").strip() or None
     ss = gc.create(f"AI Study Partner — {student_name}", folder_id=folder_id)
     ss.share(None, perm_type="anyone", role="reader")
 
     # Share with the admin's real email so they can see/edit it. Never fatal —
-    # a wrong/own-SA email must not break onboarding.
+    # a wrong email must not break onboarding. (Not needed when OAuth = your own
+    # account already owns the sheet, but harmless if SHEET_SHARE_EMAIL is set.)
     admin_email = os.getenv("SHEET_SHARE_EMAIL", "").strip()
     if admin_email:
         try:
