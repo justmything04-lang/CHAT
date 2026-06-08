@@ -1,6 +1,8 @@
 """
 All Gemini AI calls — uses the current google-genai SDK (replaces deprecated google-generativeai).
-Model: gemini-2.0-flash  (free-tier; swap to gemini-2.5-flash for better reasoning)
+Default model: gemini-2.5-flash (override with GEMINI_MODEL).
+If a model is retired (404) or rate-limited (429), the bot automatically falls
+back through a list of models so a single model change never breaks everything.
 """
 import json
 import logging
@@ -10,10 +12,16 @@ import time
 from google import genai as _genai
 
 logger = logging.getLogger(__name__)
-_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+# Preferred model (override via GEMINI_MODEL). The bot automatically falls back
+# through the list below if a model is unavailable (404) or rate-limited (429),
+# so a retired model never takes the whole bot down.
+_PRIMARY_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
 _MAX_RETRIES = 3
 
 _client: "_genai.Client | None" = None
+_working_model: "str | None" = None  # cached once a model responds successfully
 
 
 def _get_client() -> "_genai.Client":
@@ -28,20 +36,43 @@ def _is_rate_limit(exc: Exception) -> bool:
     return "429" in s or "RESOURCE_EXHAUSTED" in s or "quota" in s.lower()
 
 
+def _is_model_unavailable(exc: Exception) -> bool:
+    s = str(exc).lower()
+    return "404" in s or "not_found" in s or "not available" in s or "is not found" in s
+
+
+def _ordered_models() -> list:
+    out, seen = [], set()
+    for m in [_working_model, _PRIMARY_MODEL, *_FALLBACK_MODELS]:
+        if m and m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
 def _generate(prompt: str) -> str:
+    global _working_model
     last_exc: "Exception | None" = None
-    for attempt in range(_MAX_RETRIES):
-        try:
-            resp = _get_client().models.generate_content(model=_MODEL, contents=prompt)
-            return resp.text
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            if _is_rate_limit(exc) and attempt < _MAX_RETRIES - 1:
-                wait = 3 * (attempt + 1)  # 3s, then 6s
-                logger.warning("Gemini rate-limited — retrying in %ss", wait)
-                time.sleep(wait)
-                continue
-            raise
+    for model in _ordered_models():
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = _get_client().models.generate_content(model=model, contents=prompt)
+                _working_model = model  # remember the model that worked
+                return resp.text
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if _is_rate_limit(exc):
+                    if attempt < _MAX_RETRIES - 1:
+                        wait = 3 * (attempt + 1)  # 3s, then 6s
+                        logger.warning("Gemini %s rate-limited — retry in %ss", model, wait)
+                        time.sleep(wait)
+                        continue
+                    logger.warning("Gemini %s still limited — trying next model", model)
+                    break  # next model has a separate quota bucket
+                if _is_model_unavailable(exc):
+                    logger.warning("Gemini %s unavailable — trying next model", model)
+                    break  # model retired — try the next one
+                raise  # genuine error — surface immediately
     raise last_exc  # pragma: no cover
 
 

@@ -28,8 +28,8 @@ Built by **Sanjay V — JMT Technologies** · Workshop June 7, 2026
 
 | Component | Technology |
 |---|---|
-| Bot | python-telegram-bot 20.7 (async) |
-| AI Brain | Gemini 2.0 Flash (free API) |
+| Bot | python-telegram-bot 21.9 (async) |
+| AI Brain | Gemini 2.5 Flash (free API, auto-fallback) |
 | Study Planner | Google Sheets API · gspread 6 |
 | Slides | Gamma deep-link (no API key) |
 | Material Q&A | notebooklm-py + Gemini fallback |
