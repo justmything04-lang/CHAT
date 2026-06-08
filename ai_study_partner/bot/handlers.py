@@ -400,14 +400,31 @@ async def _handle_onboarding(update, context, user_id: int,
         except Exception as exc:
             logger.error("Google Sheets setup failed: %s", exc, exc_info=True)
             update_user(user_id, {"onboarding_step": "awaiting_end_date"})
-            await update.message.reply_text(
-                "❌ Google Sheet creation failed.\n\n"
-                "Make sure:\n"
-                "• *GOOGLE_CREDENTIALS_JSON* is set to your *new* (un-revoked) service account key\n"
-                "• *Google Sheets API* and *Google Drive API* are enabled in Google Cloud Console\n\n"
-                "Re-enter your target date to retry once fixed.",
-                parse_mode="Markdown",
-            )
+            err = str(exc)
+            low = err.lower()
+            if "storagequota" in low or "storage quota" in low:
+                msg = (
+                    "❌ *Sheet failed — service-account storage quota.*\n\n"
+                    "Service accounts can't store files on a personal Gmail. Fix:\n"
+                    "1. Create a folder in *your* Google Drive\n"
+                    "2. Share it (Editor) with your service-account email\n"
+                    "3. Open the folder — copy the ID from the URL\n"
+                    "4. Set `GDRIVE_FOLDER_ID` in Render to that ID\n\n"
+                    "Then re-enter your target date."
+                )
+            elif "disabled" in low or "has not been used" in low or "service_disabled" in low:
+                msg = (
+                    "❌ *Sheet failed — an API is not enabled yet.*\n\n"
+                    "Enable *both* in Google Cloud Console → APIs & Services → Library:\n"
+                    "• Google Sheets API\n• Google Drive API\n\n"
+                    "Wait 2-3 min after enabling, then re-enter your target date."
+                )
+            else:
+                msg = (
+                    f"❌ *Sheets error:*\n`{err[:400]}`\n\n"
+                    "Re-enter your target date to retry."
+                )
+            await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
         update_user(user_id, {
