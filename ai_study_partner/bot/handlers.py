@@ -375,9 +375,8 @@ async def _handle_onboarding(update, context, user_id: int,
             logger.error("Gemini plan creation failed: %s", exc, exc_info=True)
             update_user(user_id, {"onboarding_step": "awaiting_end_date"})
             await update.message.reply_text(
-                "❌ AI plan creation failed.\n\n"
-                "Check that your *GEMINI_API_KEY* is valid in Render → Environment.\n"
-                "Then re-enter your target date to retry.",
+                f"❌ *Gemini error:*\n`{str(exc)[:300]}`\n\n"
+                "Re-enter your target date to retry.",
                 parse_mode="Markdown",
             )
             return
