@@ -41,6 +41,11 @@ def _is_model_unavailable(exc: Exception) -> bool:
     return "404" in s or "not_found" in s or "not available" in s or "is not found" in s
 
 
+def _is_transient(exc: Exception) -> bool:
+    s = str(exc)
+    return "500" in s or "INTERNAL" in s or "503" in s or "502" in s
+
+
 def _ordered_models() -> list:
     out, seen = [], set()
     for m in [_working_model, _PRIMARY_MODEL, *_FALLBACK_MODELS]:
@@ -69,6 +74,14 @@ def _generate(prompt: str) -> str:
                         continue
                     logger.warning("Gemini %s still limited — trying next model", model)
                     break  # next model has a separate quota bucket
+                if _is_transient(exc):
+                    if attempt < _MAX_RETRIES - 1:
+                        wait = 5 * (attempt + 1)  # 5s, then 10s
+                        logger.warning("Gemini %s 500/502/503 — retry in %ss", model, wait)
+                        time.sleep(wait)
+                        continue
+                    logger.warning("Gemini %s still returning server error — trying next model", model)
+                    break
                 if _is_model_unavailable(exc):
                     logger.warning("Gemini %s unavailable — trying next model", model)
                     break  # model retired — try the next one
